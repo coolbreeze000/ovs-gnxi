@@ -1,0 +1,22 @@
+version: '3.2'
+services:
+  ovs:
+    container_name: ovs
+    build:
+      context: .
+      dockerfile: docker/ovs/Dockerfile
+    tty: true
+  gnxi:
+    container_name: gnxi
+    build:
+      context: .
+      dockerfile: docker/gnxi/Dockerfile
+    ports:
+      - target: 18080
+        published: 18080
+        protocol: tcp
+        mode: host
+      - target: 32123
+        published: 32123
+        protocol: tcp
+        mode: host
