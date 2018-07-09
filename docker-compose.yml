@@ -1,0 +1,34 @@
+version: '3.2'
+services:
+  ovs:
+    container_name: ovs
+    domainname: ovs.gnxi.lan
+    hostname: ovs
+    build:
+      context: .
+      dockerfile: docker/ovs/Dockerfile
+    tty: true
+  target:
+    container_name: target
+    domainname: target.gnxi.lan
+    hostname: target
+    build:
+      context: .
+      dockerfile: docker/target/Dockerfile
+    ports:
+      - target: 18080
+        published: 18080
+        protocol: tcp
+        mode: host
+      - target: 32123
+        published: 32123
+        protocol: tcp
+        mode: host
+  client:
+    container_name: client
+    domainname: client.gnxi.lan
+    hostname: client
+    build:
+      context: .
+      dockerfile: docker/client/Dockerfile
+    tty: true
