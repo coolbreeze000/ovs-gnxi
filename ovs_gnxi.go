@@ -11,7 +11,7 @@ import (
 )
 
 var (
-	logModule = "ovs-gnxi"
+	logModule = "ovs-target"
 	log       = logging.MustGetLogger(logModule)
 )
 
@@ -50,8 +50,8 @@ func NewPrometheusMonitoringInstance(ipAddress, port string) (*PrometheusMonitor
 
 func (p *PrometheusMonitoringInstance) InitializeMetrics() {
 	p.ErrorsGaugeMetric = prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: "cod_errors",
-		Help: "The number of errors CoD experienced during runtime.",
+		Name: "ovsgnxi_errors",
+		Help: "The number of errors ovs-target experienced during runtime.",
 	})
 	p.ErrorsGaugeMetric.Set(0)
 }
