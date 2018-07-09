@@ -3,11 +3,11 @@ package main
 import (
 	"os"
 
+	"fmt"
 	"github.com/op/go-logging"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"net/http"
-	"fmt"
 )
 
 var (
@@ -36,9 +36,9 @@ func run() {
 }
 
 type PrometheusMonitoringInstance struct {
-	IPAddress			string
-	Port				string
-	ErrorsGaugeMetric	prometheus.Gauge
+	IPAddress         string
+	Port              string
+	ErrorsGaugeMetric prometheus.Gauge
 }
 
 func NewPrometheusMonitoringInstance(ipAddress, port string) (*PrometheusMonitoringInstance, error) {
