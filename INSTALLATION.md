@@ -77,32 +77,36 @@ docker-compose push
 
 ## Run
 
-**Run Container:**
+### Run Container
 ```bash
 docker-compose build
 docker-compose up -d --force-recreate
+docker-compose run ovs python /opt/ovs_gnxi_topology_network.py --controller 'faucet.gnxi.lan'
 docker-compose down
 ```
 
-**Stop all containers:**
+### Stop all containers
 ```bash
 docker ps -a -q | % { docker stop $_ }
 ```
 
-**Remove all stopped containers:**
+### Remove all stopped containers
 ```bash
 docker ps -a -q | % { docker rm $_ }
 ```
 
-**Remove all images:**
+### Remove all images
 ```bash
 docker images -a -q | % { docker rmi $_ -f }
 ```
 
-**Connect to Container:**
+### Connect to Container
+
+#### Windows
+
 ```bash
-docker ps -aqf "name=gnxi"
-docker exec -i -t $CONTAINER_ID bash
+$env:OVS_CONTAINER_ID=docker ps -aqf "name=ovs"
+docker exec -i -t $env:OVS_CONTAINER_ID bash
 ```
 
 ## Go

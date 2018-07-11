@@ -1,0 +1,14 @@
+vlans:
+    100:
+        name: "test"
+dps:
+    sw1:
+        dp_id: 0x1
+        hardware: 'Open vSwitch'
+        interfaces:
+            1:
+                native_vlan: 100
+            2:
+                native_vlan: 100
+            3:
+                native_vlan: 100
