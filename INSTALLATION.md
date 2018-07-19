@@ -77,6 +77,16 @@ docker-compose push
 
 ## Run
 
+### Run Vagrant
+```bash
+vagrant destroy
+vagrant up
+vagrant global-status
+vagrant reload --provision
+vagrant ssh ovs-gnxi
+```
+
+
 ### Run Container
 ```bash
 docker-compose build

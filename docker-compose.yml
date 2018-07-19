@@ -26,9 +26,14 @@ services:
     domainname: gnxi.lan
     hostname: ovs
     dns_search: gnxi.lan
+    privileged: true
+    cap_add:
+      - ALL
     build:
       context: .
       dockerfile: docker/ovs/Dockerfile
+    volumes:
+      - /lib/modules:/lib/modules
     ports:
       - target: 6640
         published: 6640

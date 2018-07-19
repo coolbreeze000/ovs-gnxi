@@ -16,6 +16,9 @@
 # IDE
 .idea/
 
+# Vagrant
+.vagrant/
+
 # Build
 ovs_gnxi
 ovs_gnxi.exe
