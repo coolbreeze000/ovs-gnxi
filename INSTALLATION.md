@@ -79,9 +79,10 @@ docker-compose push
 
 ### Run Vagrant
 ```bash
-vagrant destroy
+$env:VAGRANT_DEFAULT_PROVIDER="virtualbox"
+vagrant destroy --force
 vagrant up
-vagrant global-status
+vagrant global-status --provider=virtualbox
 vagrant reload --provision
 vagrant ssh ovs-gnxi
 ```

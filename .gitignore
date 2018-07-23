@@ -19,6 +19,9 @@
 # Vagrant
 .vagrant/
 
+# Logs
+*.log
+
 # Build
 ovs_gnxi
 ovs_gnxi.exe

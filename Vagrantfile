@@ -8,7 +8,10 @@
 Vagrant.configure("2") do |config|
   # Every Vagrant development environment requires a box. You can search for
   # boxes at https://vagrantcloud.com/search.
-  config.vm.box = "generic/ubuntu1804"
+  config.vm.box = "ubuntu/bionic64"
+
+  # Network Settings
+  config.vm.network "private_network", type: "dhcp"
 
   # Machine Name
   config.vm.define "ovs-gnxi"
@@ -17,7 +20,7 @@ Vagrant.configure("2") do |config|
   config.ssh.shell = "bash -c 'BASH_ENV=/etc/profile exec bash'"
 
   # Shared Folders
-  config.vm.synced_folder ".", "/opt/ovs-gnxi"
+  config.vm.synced_folder "./", "/opt/ovs-gnxi/"
 
   # Enable provisioning with a shell script. Additional provisioners such as
   # Puppet, Chef, Ansible, Salt, and Docker are also available. Please see the
