@@ -1,39 +1,9 @@
 ## Build
 
-### On Windows
-
-#### For Windows
-
-```bash
-$env:GOOS="windows"
-$env:GOARCH="amd64"
-$env:CGO_ENABLED=0
-set PATHEXT=.BAT
-go build -o ovs_gnxi
-```
-
-#### For Linux
-
-```bash
-$env:GOOS="linux"
-$env:GOARCH="amd64"
-$env:CGO_ENABLED=0
-set PATHEXT=.BAT
-go build -o ovs_gnxi
-```
-
-### On Mac OS X
-
-#### For Linux
+### For Linux
 
 ```bash
 GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o cod
-```
-
-### Windows
-
-```bash
-GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -o cod
 ```
 
 ## Login to Registry
@@ -78,7 +48,7 @@ docker-compose push
 ## Run
 
 ### Run Vagrant
-```bash
+```powershell
 $env:VAGRANT_DEFAULT_PROVIDER="virtualbox"
 vagrant destroy --force
 vagrant up
@@ -90,34 +60,38 @@ vagrant ssh ovs-gnxi
 
 ### Run Container
 ```bash
-docker-compose build
-docker-compose up -d --force-recreate
-docker-compose run ovs python /opt/ovs_gnxi_topology_network.py --controller 'faucet.gnxi.lan'
+docker-compose build --no-cache
+docker-compose up -d --force-recreate --build
 docker-compose down
 ```
 
 ### Stop all containers
 ```bash
-docker ps -a -q | % { docker stop $_ }
+docker stop $(docker ps -a -q)
 ```
 
 ### Remove all stopped containers
 ```bash
-docker ps -a -q | % { docker rm $_ }
+docker rm $(docker ps -a -q)
 ```
 
 ### Remove all images
 ```bash
-docker images -a -q | % { docker rmi $_ -f }
+docker rmi $(docker images -a -q) -f
 ```
 
 ### Connect to Container
 
-#### Windows
-
 ```bash
-$env:OVS_CONTAINER_ID=docker ps -aqf "name=ovs"
-docker exec -i -t $env:OVS_CONTAINER_ID bash
+export OVS_CONTAINER_ID=`docker ps -aqf 'name=ovs'`
+docker exec -i -t $OVS_CONTAINER_ID bash
+```
+
+#### Container: OVS (mininet)
+```bash
+screen -ls
+screen -r mininet
+# CTRL+a d
 ```
 
 ## Go

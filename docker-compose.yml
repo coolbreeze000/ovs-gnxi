@@ -44,6 +44,8 @@ services:
        ovsgnxi_default:
           aliases:
             - ovs.gnxi.lan
+    depends_on:
+      - faucet
   target:
     container_name: target
     domainname: gnxi.lan
