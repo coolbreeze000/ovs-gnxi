@@ -5,7 +5,7 @@ ENV HOME=/home/client
 RUN mkdir $HOME
 WORKDIR $HOME
 RUN apt-get update
-RUN DEBIAN_FRONTEND=noninteractive apt-get install -qy --no-install-recommends apt-utils ca-certificates git golang-go
+RUN DEBIAN_FRONTEND=noninteractive apt-get install -qy --no-install-recommends apt-utils ca-certificates net-tools iputils-ping dnsutils git golang-go
 ENV GOPATH=$HOME/go
 ENV GOBIN=$GOPATH/bin
 ENV PATH=$GOBIN:${PATH}

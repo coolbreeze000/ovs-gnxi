@@ -1,17 +1,56 @@
 version: '3.2'
 services:
+  faucet:
+    container_name: faucet
+    domainname: gnxi.lan
+    hostname: faucet
+    dns_search: gnxi.lan
+    build:
+      context: .
+      dockerfile: docker/faucet/Dockerfile
+    ports:
+      - target: 6653
+        published: 6653
+        protocol: tcp
+        mode: host
+      - target: 9302
+        published: 9302
+        protocol: tcp
+        mode: host
+    networks:
+       ovsgnxi_default:
+          aliases:
+            - faucet.gnxi.lan
   ovs:
     container_name: ovs
-    domainname: ovs.gnxi.lan
+    domainname: gnxi.lan
     hostname: ovs
+    dns_search: gnxi.lan
+    privileged: true
+    cap_add:
+      - ALL
     build:
       context: .
       dockerfile: docker/ovs/Dockerfile
+    volumes:
+      - /lib/modules:/lib/modules
+    ports:
+      - target: 6640
+        published: 6640
+        protocol: tcp
+        mode: host
     tty: true
+    networks:
+       ovsgnxi_default:
+          aliases:
+            - ovs.gnxi.lan
+    depends_on:
+      - faucet
   target:
     container_name: target
-    domainname: target.gnxi.lan
+    domainname: gnxi.lan
     hostname: target
+    dns_search: gnxi.lan
     build:
       context: .
       dockerfile: docker/target/Dockerfile
@@ -24,11 +63,22 @@ services:
         published: 32123
         protocol: tcp
         mode: host
+    networks:
+       ovsgnxi_default:
+          aliases:
+            - target.gnxi.lan
   client:
     container_name: client
-    domainname: client.gnxi.lan
+    domainname: gnxi.lan
     hostname: client
+    dns_search: gnxi.lan
     build:
       context: .
       dockerfile: docker/client/Dockerfile
     tty: true
+    networks:
+       ovsgnxi_default:
+          aliases:
+            - client.gnxi.lan
+networks:
+  ovsgnxi_default:

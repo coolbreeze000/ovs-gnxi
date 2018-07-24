@@ -1,0 +1,18 @@
+faucet_configs:
+    - '/etc/faucet/faucet.yaml'
+watchers:
+  port_stats:
+      dps: ['switch-1']
+      type: 'port_stats'
+      interval: 10
+      db: 'prometheus'
+  flow_table:
+      dps: ['switch-1']
+      type: 'flow_table'
+      interval: 10
+      db: 'prometheus'
+dbs:
+  prometheus:
+      type: 'prometheus'
+      prometheus_port: 9303
+      prometheus_addr: ''
