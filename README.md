@@ -5,4 +5,4 @@
 [![Go Docs](http://img.shields.io/badge/godoc-reference-blue.svg?style=flat)](https://godoc.org/github.com/coolbreeze000/ovs-gnxi)
 
 
-A simple gNXI wrapper prototype for OVS
+A simple gNXI wrapper prototype for Open vSwitch (OVS).
