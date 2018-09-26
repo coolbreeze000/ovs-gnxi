@@ -3,7 +3,7 @@
 ### For Linux
 
 ```bash
-GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o cod
+GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o ovs_gnxi
 ```
 
 ## Login to Registry
@@ -52,7 +52,7 @@ docker-compose push
 $env:VAGRANT_DEFAULT_PROVIDER="virtualbox"
 vagrant destroy --force
 vagrant up
-vagrant global-status --provider=virtualbox
+vagrant global-status
 vagrant reload --provision
 vagrant ssh ovs-gnxi
 ```
@@ -96,9 +96,15 @@ screen -r mininet
 
 ## Go
 
-### Govendor
+### Install Govendor
 
-```bash
+```powershell
+go get -u github.com/kardianos/govendor
+```
+
+### Use Govendor
+
+```powershell
 govendor init
 govendor add +external
 ```

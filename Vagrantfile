@@ -20,7 +20,10 @@ Vagrant.configure("2") do |config|
   config.ssh.shell = "bash -c 'BASH_ENV=/etc/profile exec bash'"
 
   # Shared Folders
-  config.vm.synced_folder "./", "/opt/ovs-gnxi/"
+  config.vm.synced_folder "./", "/root/go/src/ovs-gnxi/",
+    type: "rsync",
+    rsync__auto: true,
+    rsync__exclude: [".idea/", ".vagrant/", ".github/", ".git/", ".travis.yml", "Vagrantfile", ".gitignore", "*.log"]
 
   # Enable provisioning with a shell script. Additional provisioners such as
   # Puppet, Chef, Ansible, Salt, and Docker are also available. Please see the
