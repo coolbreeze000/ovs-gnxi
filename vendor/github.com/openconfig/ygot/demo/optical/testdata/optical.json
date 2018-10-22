@@ -1,0 +1,42 @@
+{
+   "aps": {
+      "aps-modules": {
+         "aps-module": {
+            "mod-one": {
+               "config": {
+                  "name": "mod-one",
+                  "primary-switch-hysteresis": -42.42,
+                  "primary-switch-threshold": -96.96,
+                  "revertive": false
+               },
+               "name": "mod-one"
+            },
+            "mod-two": {
+               "config": {
+                  "name": "mod-two",
+                  "primary-switch-hysteresis": -42.42,
+                  "primary-switch-threshold": -84.84,
+                  "revertive": true
+               },
+               "name": "mod-two"
+            }
+         }
+      }
+   },
+   "components": {
+      "component": {
+         "mod-one": {
+            "config": {
+               "name": "mod-one"
+            },
+            "name": "mod-one"
+         },
+         "mod-two": {
+            "config": {
+               "name": "mod-two"
+            },
+            "name": "mod-two"
+         }
+      }
+   }
+}

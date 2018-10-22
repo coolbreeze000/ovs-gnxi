@@ -1,19 +1,41 @@
 package main
 
 import (
+	"github.com/google/gnxi/gnmi"
+	"github.com/google/gnxi/gnmi/modeldata"
+	"github.com/google/gnxi/gnmi/modeldata/gostruct"
+	"github.com/google/gnxi/utils/credentials"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/reflection"
+	"net"
 	"os"
+	"reflect"
 
 	"fmt"
 	"github.com/op/go-logging"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"net/http"
+
+	pb "github.com/openconfig/gnmi/proto/gnmi"
 )
 
 var (
 	logModule = "ovs-target"
 	log       = logging.MustGetLogger(logModule)
 )
+
+type server struct {
+	*gnmi.Server
+}
+
+func newServer(model *gnmi.Model, config []byte) (*server, error) {
+	s, err := gnmi.NewServer(model, config, nil)
+	if err != nil {
+		return nil, err
+	}
+	return &server{Server: s}, nil
+}
 
 func main() {
 	defer os.Exit(0)
@@ -27,6 +49,75 @@ func main() {
 		os.Exit(1)
 	}
 	go prometheusInstance.StartPrometheus()
+
+	client, err := NewOVSClient("127.0.0.1", "6640")
+	if err != nil {
+		log.Fatal("Unable to initialize OVS Client\n")
+	}
+
+	log.Info(client.String())
+
+	//
+	// Test https://github.com/google/gnxi/blob/master/gnmi_target/gnmi_target.go
+	//
+
+	model := gnmi.NewModel(modeldata.ModelData,
+		reflect.TypeOf((*gostruct.Device)(nil)),
+		gostruct.SchemaTree["Device"],
+		gostruct.Unmarshal,
+		gostruct.ΛEnum)
+
+	opts := credentials.ServerCredentials()
+	g := grpc.NewServer(opts...)
+
+	configData := []byte(
+		`"{
+		"openconfig-openflow:openflow": {
+			"controllers": {
+				"controller": [
+					{
+						"config": {
+							"name": "main"
+						},
+						"connections": {
+							"connection": [
+								{
+									"config": {
+										"address": "127.0.0.1"
+									},
+									"state": {
+										"address": "127.0.0.1"
+									}
+								}
+							]
+						},
+						"name": "main"
+					}
+				]
+			}
+		}
+	}"`)
+	s, err := newServer(model, configData)
+	if err != nil {
+		log.Fatalf("Error on creating gNMI target: %v", err)
+	}
+	pb.RegisterGNMIServer(g, s)
+	reflection.Register(g)
+
+	log.Infof("Starting to listen")
+	listen, err := net.Listen("tcp", "0.0.0.0")
+	if err != nil {
+		log.Fatalf("Failed to listen: %v", err)
+	}
+
+	log.Info("Starting to serve")
+	if err := g.Serve(listen); err != nil {
+		log.Fatalf("Failed to serve: %v", err)
+	}
+
+	//
+	//
+	//
 
 	run()
 }
