@@ -108,3 +108,14 @@ go get -u github.com/kardianos/govendor
 govendor init
 govendor add +external
 ```
+
+## Development
+
+### Sync Changes for Development
+
+```bash
+vagrant rsync-auto
+GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o ovs_gnxi
+docker-compose build --no-cache target
+docker-compose restart target
+```
