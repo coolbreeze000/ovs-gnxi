@@ -33,8 +33,8 @@ openssl verify -verbose -CAfile ca.crt client.crt
 # Remove unnecessary cert files
 rm -f ca.key ca.csr server.csr client.csr
 # Copy cert files to target
-cp ./{ca.crt,server.crt,server.key} docker/target/certs
+cp -f ./{ca.crt,server.crt,server.key} ../docker/target/certs
 # Copy cert files to client
-cp ./{ca.crt,client.crt,client.key} docker/client/certs
+cp -f ./{ca.crt,client.crt,client.key} ../docker/client/certs
 # Cleanup temporary cert files
-rm -f ca.crt server.crt server.key ca.crt client.crt client.key
+rm -f ca.srl server.crt server.key ca.crt client.crt client.key

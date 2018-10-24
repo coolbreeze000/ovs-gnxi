@@ -1,6 +1,6 @@
 FROM ubuntu:18.04
 ENV HOME=/home/client
-RUN mkdir $HOME/certs
+RUN mkdir -p $HOME/certs
 WORKDIR $HOME
 ADD docker/client/certs/ca.crt $HOME/certs/ca.crt
 ADD docker/client/certs/client.crt $HOME/certs/client.crt

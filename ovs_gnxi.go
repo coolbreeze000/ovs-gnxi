@@ -11,6 +11,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/reflection"
 	"google.golang.org/grpc/status"
+	"io/ioutil"
 	"net"
 	"os"
 	"reflect"
@@ -84,6 +85,14 @@ func main() {
 	log.Info(client.String())
 
 	//
+	//
+	//
+
+	flag.Set("ca", "certs/ca.crt")
+	flag.Set("cert", "certs/server.crt")
+	flag.Set("key", "certs/server.key")
+
+	//
 	// Test https://github.com/google/gnxi/blob/master/gnmi_target/gnmi_target.go
 	//
 
@@ -108,33 +117,11 @@ func main() {
 	opts := credentials.ServerCredentials()
 	g := grpc.NewServer(opts...)
 
-	configData := []byte(
-		`"{
-		"openconfig-openflow:openflow": {
-			"controllers": {
-				"controller": [
-					{
-						"config": {
-							"name": "main"
-						},
-						"connections": {
-							"connection": [
-								{
-									"config": {
-										"address": "127.0.0.1"
-									},
-									"state": {
-										"address": "127.0.0.1"
-									}
-								}
-							]
-						},
-						"name": "main"
-					}
-				]
-			}
-		}
-	}"`)
+	configData, err := ioutil.ReadFile("openconfig-openflow.json")
+	if err != nil {
+		log.Fatalf("Error reading config file: %v", err)
+	}
+
 	s, err := newServer(model, configData)
 	if err != nil {
 		log.Fatalf("Error on creating gNMI target: %v", err)

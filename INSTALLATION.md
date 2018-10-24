@@ -83,7 +83,7 @@ docker rmi $(docker images -a -q) -f
 ### Connect to Container
 
 ```bash
-export OVS_CONTAINER_ID=`docker ps -aqf 'name=ovs'`
+export OVS_CONTAINER_ID=`docker ps -aqf 'name=client'`
 docker exec -i -t $OVS_CONTAINER_ID bash
 ```
 
@@ -116,6 +116,13 @@ govendor add +external
 ```bash
 vagrant rsync-auto
 GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o ovs_gnxi
-docker-compose build --no-cache target
-docker-compose restart target
+docker-compose up -d --force-recreate --build target
+docker logs target
+```
+
+### Test Client
+```bash
+gnmi_get -target_addr target:10161 -key certs/client.key -cert certs/client.crt -ca certs/ca.crt -target_name server.gnxi.lan -alsologtostderr \
+  -xpath "/system/openflow/agent/config/datapath-id" \
+  -xpath "/system/openflow/controllers/controller[name=main]/connections/connection[aux-id=0]/config/address"
 ```
