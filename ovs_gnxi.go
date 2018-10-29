@@ -87,6 +87,8 @@ func main() {
 	//
 	//
 	//
+	// https://github.com/google/link022/blob/9dbee2acc0d1e02987f94a2c9ced45aa7fbfe91b/agent/gnmi/handler.go
+	// https://github.com/google/link022/blob/master/agent/gnmi/server.go
 
 	flag.Set("ca", "certs/ca.crt")
 	flag.Set("cert", "certs/server.crt")

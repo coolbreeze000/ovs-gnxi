@@ -50,6 +50,7 @@ docker-compose push
 ### Run Vagrant
 ```powershell
 $env:VAGRANT_DEFAULT_PROVIDER="virtualbox"
+vagrant box update
 vagrant destroy --force
 vagrant up
 vagrant global-status
@@ -115,6 +116,7 @@ govendor add +external
 
 ```bash
 vagrant rsync-auto
+vagrant ssh ovs-gnxi
 GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o ovs_gnxi
 docker-compose up -d --force-recreate --build target
 docker logs target
@@ -126,3 +128,6 @@ gnmi_get -target_addr target:10161 -key certs/client.key -cert certs/client.crt 
   -xpath "/system/openflow/agent/config/datapath-id" \
   -xpath "/system/openflow/controllers/controller[name=main]/connections/connection[aux-id=0]/config/address"
 ```
+
+### Generate Go Bindings for Open vSwitch
+go run vendor/github.com/openconfig/ygot/generator/generator.go -path=yang -output_file=oc.go -package_name=openvswitch -generate_fakeroot -fakeroot_name=device -compress_paths=true -exclude_modules=ietf-interfaces yang/openconfig-interfaces.yang
