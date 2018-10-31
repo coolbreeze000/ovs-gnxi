@@ -1,0 +1,60 @@
+{
+  "openconfig-interfaces:interfaces": {
+    "interface": [
+      {
+        "config": {
+          "description": "Test Interface",
+          "mtu": 1500,
+          "name": "eth0"
+        },
+        "name": "eth0",
+        "state": {
+          "admin-status": "UP"
+        }
+      }
+    ]
+  },
+  "openconfig-platform:components": {
+    "component": [
+      {
+        "config": {
+          "name": "os"
+        },
+        "name": "os",
+        "state": {
+          "description": "Open vSwitch 2.19",
+          "type": "openconfig-platform-types:OPERATING_SYSTEM"
+        }
+      }
+    ]
+  },
+  "openconfig-system:system": {
+    "config": {
+      "hostname": "ovs.gnxi.lan"
+    },
+    "openconfig-openflow:openflow": {
+      "controllers": {
+        "controller": [
+          {
+            "config": {
+              "name": "faucet"
+            },
+            "connections": {
+              "connection": [
+                {
+                  "aux-id": 0,
+                  "config": {
+                    "address": "127.0.0.1",
+                    "aux-id": 0,
+                    "port": 6633
+                  }
+                }
+              ]
+            },
+            "name": "faucet"
+          }
+        ]
+      }
+    }
+  }
+}
