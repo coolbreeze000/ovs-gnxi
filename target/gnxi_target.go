@@ -26,7 +26,7 @@ import (
 )
 
 var (
-	logModule = "ovs-target"
+	logModule = "gnxi-target"
 	log       = logging.MustGetLogger(logModule)
 )
 
@@ -77,12 +77,12 @@ func main() {
 	}
 	go prometheusInstance.StartPrometheus()
 
-	client, err := NewOVSClient("127.0.0.1", "6640")
+	client, err := NewOVSClient("ovs.gnxi.lan", "tcp", "6640")
 	if err != nil {
 		log.Fatal("Unable to initialize OVS Client\n")
 	}
-
 	log.Info(client.String())
+	client.InitializeConfig()
 
 	//
 	//

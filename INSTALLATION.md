@@ -84,8 +84,11 @@ docker rmi $(docker images -a -q) -f
 ### Connect to Container
 
 ```bash
-export OVS_CONTAINER_ID=`docker ps -aqf 'name=client'`
-docker exec -i -t $OVS_CONTAINER_ID bash
+export CONTAINER_ID_OVS=`docker ps -aqf 'name=ovs'`
+export CONTAINER_ID_FAUCET=`docker ps -aqf 'name=faucet'`
+export CONTAINER_ID_TARGET=`docker ps -aqf 'name=target'`
+export CONTAINER_ID_CLIENT=`docker ps -aqf 'name=client'`
+docker exec -i -t $CONTAINER_ID_OVS bash
 ```
 
 #### Container: OVS (mininet)
@@ -93,6 +96,17 @@ docker exec -i -t $OVS_CONTAINER_ID bash
 screen -ls
 screen -r mininet
 # CTRL+a d
+ovs-ofctl -O OpenFlow13 dump-flows sw1
+```
+
+#### Container: Client (ovs-client)
+```bash
+ovsdb-client list-dbs tcp:`dig ovs.gnxi.lan +short`:6640
+ovsdb-client list-tables
+ovsdb-client list-columns Open_vSwitch Controller
+ovsdb-client dump Open_vSwitch Controller
+ovsdb-client dump Open_vSwitch Controller target
+ovsdb-client transact '["Open_vSwitch",{"op":"select", "table":"Controller", "where": [], "columns":["target"]}]'
 ```
 
 ## Go
@@ -117,13 +131,15 @@ govendor add +external
 ```bash
 vagrant rsync-auto
 vagrant ssh ovs-gnxi
-GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o ovs_gnxi
+GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o gnxi_target
 docker-compose up -d --force-recreate --build target
 docker logs target
 ```
 
 ### Test Client
 ```bash
+GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o gnxi_client
+docker-compose up -d --force-recreate --build client
 gnmi_get -target_addr target:10161 -key certs/client.key -cert certs/client.crt -ca certs/ca.crt -target_name server.gnxi.lan -alsologtostderr \
   -xpath "/system/openflow/agent/config/datapath-id" \
   -xpath "/system/openflow/controllers/controller[name=main]/connections/connection[aux-id=0]/config/address"
