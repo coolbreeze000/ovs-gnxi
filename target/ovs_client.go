@@ -32,10 +32,13 @@ func (o *OVSClient) String() string {
 	return fmt.Sprintf("OVSClient(Address: \"%v\", Protocol: \"%v\", Port: \"%v\")", o.Address, o.Protocol, o.Port)
 }
 
-func NewOVSClient(address, protocol, port string) (*OVSClient, error) {
+func NewOVSClient(address, protocol, port, privateKeyPath, publicKeyPath, caPath string) (*OVSClient, error) {
 	var err error
+
 	o := OVSClient{Address: address, Protocol: protocol, Port: port}
-	o.Connection, err = ovsdb.Dial(o.Protocol, fmt.Sprintf("%v:%v", o.Address, o.Port))
+
+	o.Connection, err = ovsdb.Dial(o.Protocol, fmt.Sprintf("%v:%v", o.Address, o.Port),
+		ovsdb.SetSSLParam(privateKeyPath, publicKeyPath, caPath))
 	if err != nil {
 		log.Fatalf("failed to dial: %v", err)
 	}

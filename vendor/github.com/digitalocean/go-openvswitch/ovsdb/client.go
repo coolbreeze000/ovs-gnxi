@@ -76,6 +76,15 @@ func Debug(ll *log.Logger) OptionFunc {
 	}
 }
 
+// SetSSLParam configures SSL authentication using a private key, certificate,
+// and CA certificate for use with ovs-ofctl.
+func SetSSLParam(pkey string, cert string, cacert string) OptionFunc {
+	return func(c *Client) {
+		c.ofctlFlags = append(c.ofctlFlags, fmt.Sprintf("--private-key=%s", pkey),
+			fmt.Sprintf("--certificate=%s", cert), fmt.Sprintf("--ca-cert=%s", cacert))
+	}
+}
+
 // EchoInterval specifies an interval at which the Client will send
 // echo RPCs to an OVSDB server to keep the connection alive.  Note that the
 // OVSDB server may also send its own echo RPCs to the Client, and the Client

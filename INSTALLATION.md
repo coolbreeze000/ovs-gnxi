@@ -109,6 +109,15 @@ ovsdb-client dump Open_vSwitch Controller target
 ovsdb-client transact '["Open_vSwitch",{"op":"select", "table":"Controller", "where": [], "columns":["target"]}]'
 ```
 
+#### Container: OVS (startup)
+```bash
+ovsdb-tool create
+ovsdb-server /etc/openvswitch/conf.db -vconsole:emer -vsyslog:err -vfile:info --system-id=random --remote=punix:/var/run/openvswitch/db.sock --private-key="/home/ovs/certs/ovs.key" --certificate="/home/ovs/certs/ovs.crt" --ca-cert "/home/ovs/certs/ca.crt" --no-chdir --log-file=/var/log/openvswitch/ovsdb-server.log --pidfile=/var/run/openvswitch/ovsdb-server.pid --detach --monitor
+ovs-vswitchd unix:/var/run/openvswitch/db.sock -vconsole:emer -vsyslog:err -vfile:info --mlockall --no-chdir --log-file=/var/log/openvswitch/ovs-vswitchd.log --pidfile=/var/run/openvswitch/ovs-vswitchd.pid --detach --monitor
+ovs-appctl -t ovsdb-server ovsdb-server/add-remote pssl:6640
+ovsdb-client --private-key "/home/client/certs/client.key" --certificate "/home/client/certs/client.crt" --ca-cert "/home/client/certs/ca.crt" list-dbs ssl:`dig ovs.gnxi.lan +short`:6640
+```
+
 ## Go
 
 ### Install Govendor

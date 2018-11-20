@@ -77,7 +77,7 @@ func main() {
 	}
 	go prometheusInstance.StartPrometheus()
 
-	client, err := NewOVSClient("ovs.gnxi.lan", "tcp", "6640")
+	client, err := NewOVSClient("ovs.gnxi.lan", "ssl", "6640")
 	if err != nil {
 		log.Fatal("Unable to initialize OVS Client\n")
 	}
