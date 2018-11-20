@@ -43,6 +43,7 @@ func TestGenerateConfig(t *testing.T) {
 	n, err := c.NewConnection(0)
 	n.Address = ygot.String("127.0.0.1")
 	n.Port = ygot.Uint16(6633)
+	n.Transport = oc.OpenconfigOpenflow_Transport_TCP
 
 	// To render the device (which is currently empty) to JSON in RFC7951 format, then we
 	// simply call the ygot.EmitJSON method with the relevant arguments.

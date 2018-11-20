@@ -1,11 +1,9 @@
 package main
 
 import (
-	"context"
-	"errors"
 	"fmt"
-	"github.com/digitalocean/go-openvswitch/ovsdb"
-	"time"
+	"github.com/socketplane/libovsdb"
+	"strings"
 )
 
 const (
@@ -19,11 +17,15 @@ type OpenFlowController struct {
 	Port     string
 }
 
+func (c *OpenFlowController) String() string {
+	return fmt.Sprintf("OpenFlowController(Address: \"%v\", Protocol: \"%v\", Port: \"%v\")", c.Address, c.Protocol, c.Port)
+}
+
 type OVSClient struct {
 	Address    string
 	Protocol   string
 	Port       string
-	Connection *ovsdb.Client
+	Connection *libovsdb.OvsdbClient
 	Database   string
 	Config     []byte
 }
@@ -35,63 +37,60 @@ func (o *OVSClient) String() string {
 func NewOVSClient(address, protocol, port, privateKeyPath, publicKeyPath, caPath string) (*OVSClient, error) {
 	var err error
 
-	o := OVSClient{Address: address, Protocol: protocol, Port: port}
+	o := OVSClient{Address: address, Protocol: protocol, Port: port, Database: DefaultDatabase}
 
-	o.Connection, err = ovsdb.Dial(o.Protocol, fmt.Sprintf("%v:%v", o.Address, o.Port),
-		ovsdb.SetSSLParam(privateKeyPath, publicKeyPath, caPath))
+	o.Connection, err = libovsdb.ConnectUsingProtocolWithTLS(o.Protocol, fmt.Sprintf("%v:%v", o.Address, o.Port), privateKeyPath, publicKeyPath, caPath)
 	if err != nil {
 		log.Fatalf("failed to dial: %v", err)
 	}
 
-	o.Database, err = o.GetDefaultDatabase()
-
 	return &o, nil
 }
 
-func (o *OVSClient) GetDatabases() ([]string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-
-	dbs, err := o.Connection.ListDatabases(ctx)
-	if err != nil {
-		log.Fatalf("failed to list databases: %v", err)
-	}
-
-	return dbs, err
-}
-
-func (o *OVSClient) GetDefaultDatabase() (string, error) {
-	dbs, err := o.GetDatabases()
-
-	if err != nil {
-		log.Fatalf("failed to get default database: %v", err)
-	}
-
-	for _, d := range dbs {
-		if d == DefaultDatabase {
-			return d, nil
-		}
-	}
-
-	return "", errors.New("default database not found")
-}
-
 func (o *OVSClient) InitializeConfig() {
-	controller, err := o.GetOpenFlowControllerIP()
-	if err != nil {
+	controller, err := o.GetOpenFlowController()
+	if err == nil {
 		log.Info(controller)
 	}
 }
 
-func (o *OVSClient) ClientCallback() {
+func (o *OVSClient) GetOpenFlowController() (*OpenFlowController, error) {
+	selectOp := libovsdb.Operation{
+		Op:      "select",
+		Table:   ControllerTable,
+		Columns: []string{"target"},
+	}
 
+	operations := []libovsdb.Operation{selectOp}
+	reply, _ := o.Connection.Transact(o.Database, operations...)
+
+	if len(reply) < len(operations) {
+		fmt.Println("Number of Replies should be atleast equal to number of Operations")
+	}
+	ok := true
+	for i, o := range reply {
+		if o.Error != "" && i < len(operations) {
+			fmt.Println("Transaction Failed due to an error :", o.Error, " details:", o.Details, " in ", operations[i])
+			ok = false
+		} else if o.Error != "" {
+			fmt.Println("Transaction Failed due to an error :", o.Error)
+			ok = false
+		}
+	}
+	if ok {
+		s := strings.Split(reply[0].Rows[0]["target"].(string), ":")
+		return &OpenFlowController{Protocol: s[0], Address: s[1], Port: s[2]}, nil
+	}
+
+	return nil, nil
 }
 
-func (o *OVSClient) GetOpenFlowControllerIP() (string, error) {
+/*
+func (o *OVSClient) SetOpenFlowControllerIP() (OpenFlowController, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
-	ops := []ovsdb.TransactOp{ovsdb.Select{
+	ops := []ovsdb.TransactOp{ovsdb.Update{
 		Table:   ControllerTable,
 		Columns: []string{"target"},
 	}}
@@ -101,16 +100,8 @@ func (o *OVSClient) GetOpenFlowControllerIP() (string, error) {
 		log.Fatalf("failed to complete transaction: %v", err)
 	}
 
-	log.Info(result[0])
+	s := strings.Split(result[0]["target"].(string), ":")
 
-	/*
-		s := strings.Split(c, ":")
-		c.Protocol, c.Address, c.Port = s[0], s[1], s[2]
-	*/
-
-	return "UNIMPLEMENTED!", nil
+	return OpenFlowController{Protocol: s[0], Address: s[1], Port: s[2]}, nil
 }
-
-func (o *OVSClient) SetOpenFlowControllerIP() (string, error) {
-	return "UNIMPLEMENTED!", nil
-}
+*/

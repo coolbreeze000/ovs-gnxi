@@ -22,7 +22,7 @@
         },
         "name": "os",
         "state": {
-          "description": "Open vSwitch 2.9.0",
+          "description": "Open vSwitch 2.19",
           "type": "openconfig-platform-types:OPERATING_SYSTEM"
         }
       }
@@ -44,9 +44,10 @@
                 {
                   "aux-id": 0,
                   "config": {
-                    "address": "172.18.0.4",
+                    "address": "127.0.0.1",
                     "aux-id": 0,
-                    "port": 6653
+                    "port": 6633,
+                    "transport": "TCP"
                   }
                 }
               ]

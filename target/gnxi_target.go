@@ -77,7 +77,7 @@ func main() {
 	}
 	go prometheusInstance.StartPrometheus()
 
-	client, err := NewOVSClient("ovs.gnxi.lan", "ssl", "6640")
+	client, err := NewOVSClient("ovs.gnxi.lan", "tcp", "6640", "certs/target.key", "certs/target.crt", "certs/ca.crt")
 	if err != nil {
 		log.Fatal("Unable to initialize OVS Client\n")
 	}
@@ -91,8 +91,8 @@ func main() {
 	// https://github.com/google/link022/blob/master/agent/gnmi/server.go
 
 	flag.Set("ca", "certs/ca.crt")
-	flag.Set("cert", "certs/server.crt")
-	flag.Set("key", "certs/server.key")
+	flag.Set("cert", "certs/target.crt")
+	flag.Set("key", "certs/target.key")
 
 	//
 	// Test https://github.com/google/gnxi/blob/master/gnmi_target/gnmi_target.go

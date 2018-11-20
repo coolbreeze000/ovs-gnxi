@@ -16,8 +16,12 @@ package ovsdb
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"fmt"
+	"github.com/digitalocean/go-openvswitch/ovsdb/internal/jsonrpc"
 	"io"
+	"io/ioutil"
 	"log"
 	"net"
 	"strconv"
@@ -25,8 +29,6 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
-
-	"github.com/digitalocean/go-openvswitch/ovsdb/internal/jsonrpc"
 )
 
 // A Client is an OVSDB client.  Clients can be customized by using OptionFuncs
@@ -76,15 +78,6 @@ func Debug(ll *log.Logger) OptionFunc {
 	}
 }
 
-// SetSSLParam configures SSL authentication using a private key, certificate,
-// and CA certificate for use with ovs-ofctl.
-func SetSSLParam(pkey string, cert string, cacert string) OptionFunc {
-	return func(c *Client) {
-		c.ofctlFlags = append(c.ofctlFlags, fmt.Sprintf("--private-key=%s", pkey),
-			fmt.Sprintf("--certificate=%s", cert), fmt.Sprintf("--ca-cert=%s", cacert))
-	}
-}
-
 // EchoInterval specifies an interval at which the Client will send
 // echo RPCs to an OVSDB server to keep the connection alive.  Note that the
 // OVSDB server may also send its own echo RPCs to the Client, and the Client
@@ -105,6 +98,35 @@ func EchoInterval(d time.Duration) OptionFunc {
 // Dial dials a connection to an OVSDB server and returns a Client.
 func Dial(network, addr string, options ...OptionFunc) (*Client, error) {
 	conn, err := net.Dial(network, addr)
+	if err != nil {
+		return nil, err
+	}
+
+	return New(conn, options...)
+}
+
+// DialSSL dials a secure connection to an OVSDB server and returns a Client.
+func DialSSL(network, addr, privateKeyPath, publicKeyPath, caPath string, options ...OptionFunc) (*Client, error) {
+	caCert, err := ioutil.ReadFile(caPath)
+	if err != nil {
+		log.Fatal(err)
+	}
+	caCertPool := x509.NewCertPool()
+	caCertPool.AppendCertsFromPEM(caCert)
+
+	cert, err := tls.LoadX509KeyPair(publicKeyPath, privateKeyPath)
+	if err != nil {
+		log.Fatalf("server: loadkeys: %s", err)
+	}
+
+	tlsConfig := &tls.Config{
+		Certificates: []tls.Certificate{cert},
+		RootCAs:      caCertPool,
+	}
+
+	tlsConfig.BuildNameToCertificate()
+
+	conn, err := tls.Dial(network, addr, tlsConfig)
 	if err != nil {
 		return nil, err
 	}
