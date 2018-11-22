@@ -110,6 +110,7 @@ ovsdb-client transact '["Open_vSwitch",{"op":"select", "table":"Controller", "wh
 ovsdb-client transact '["Open_vSwitch",{"op":"select", "table":"Interface", "where": [], "columns":["name", "mtu", "link_state", "statistics"]}]'
 ovsdb-client transact '["Open_vSwitch",{"op":"select", "table":"Open_vSwitch", "where": [], "columns":["ovs_version", "external_ids"]}]'
 ovsdb-client transact '["Open_vSwitch",{"op":"update", "table":"Controller", "where":[["_uuid", "==", ["uuid","ebe661a9-7c45-4430-9b02-01992d96a1f0"]]], "row":{"target":"tcp:172.18.0.4:7777"}}]'
+ovsdb-client transact '["Open_vSwitch",{"op":"update", "table":"Open_vSwitch", "where":[["_uuid", "==", ["uuid","017dfc26-c939-417f-99ce-e431b9c0d707"]]], "row":{"db_version":"8.8.8"}}]'
 ```
 
 #### Container: OVS (startup)
