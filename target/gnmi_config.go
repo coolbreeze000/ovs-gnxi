@@ -1,14 +1,13 @@
-package testing
+package main
 
 import (
 	"fmt"
 	"github.com/openconfig/ygot/ygot"
 	"os"
 	oc "ovs-gnxi/generated/ocstruct"
-	"testing"
 )
 
-func TestGenerateConfig(t *testing.T) {
+func InitializeConfig() {
 	// Create a new device which is named according to the fake root specified above. To generate
 	// the fakeroot then generate_fakeroot should be specified. This entity corresponds to the
 	// root of the YANG schema tree. The fakeroot name is the CamelCase version of the name
@@ -54,24 +53,24 @@ func TestGenerateConfig(t *testing.T) {
 		},
 	})
 	if err != nil {
-		t.Fatalf("error on generating config json: %v", err)
+		log.Fatalf("error on generating config json: %v", err)
 	}
 
 	if _, err := os.Stat("config.json"); err != nil {
 		if os.IsNotExist(err) {
 			f, err := os.Create("config.json")
 			if err != nil {
-				t.Fatalf("error on creating config file: %v", err)
+				log.Fatalf("error on creating config file: %v", err)
 			}
 
 			_, err = f.WriteString(j)
 			if err != nil {
-				t.Fatalf("error on writing config json: %v", err)
+				log.Fatalf("error on writing config json: %v", err)
 			}
 
 			defer f.Close()
 		} else {
-			t.Fatalf("error: %v", err)
+			log.Fatalf("error: %v", err)
 		}
 	}
 }

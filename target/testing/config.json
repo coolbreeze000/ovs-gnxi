@@ -3,11 +3,10 @@
     "interface": [
       {
         "config": {
-          "description": "Test Interface",
           "mtu": 1500,
-          "name": "eth0"
+          "name": "sw1"
         },
-        "name": "eth0",
+        "name": "sw1",
         "state": {
           "admin-status": "UP"
         }
@@ -22,7 +21,7 @@
         },
         "name": "os",
         "state": {
-          "description": "Open vSwitch 2.19",
+          "description": "2.9.0",
           "type": "openconfig-platform-types:OPERATING_SYSTEM"
         }
       }
@@ -37,22 +36,22 @@
         "controller": [
           {
             "config": {
-              "name": "faucet"
+              "name": "053f3666-8e20-4efc-a6a6-dd54a86e360b"
             },
             "connections": {
               "connection": [
                 {
                   "aux-id": 0,
                   "config": {
-                    "address": "127.0.0.1",
+                    "address": "172.18.0.4",
                     "aux-id": 0,
-                    "port": 6633,
+                    "port": 6653,
                     "transport": "TCP"
                   }
                 }
               ]
             },
-            "name": "faucet"
+            "name": "053f3666-8e20-4efc-a6a6-dd54a86e360b"
           }
         ]
       }
