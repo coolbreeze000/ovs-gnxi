@@ -81,6 +81,8 @@ func main() {
 	if err != nil {
 		log.Fatal("Unable to initialize OVS Client\n")
 	}
+	// defer client.Connection.Disconnect()
+
 	log.Info(client.String())
 	client.InitializeConfig()
 
