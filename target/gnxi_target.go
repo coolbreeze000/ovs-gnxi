@@ -11,13 +11,14 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/reflection"
 	"google.golang.org/grpc/status"
-	"io/ioutil"
 	"net"
 	"os"
+	"ovs-gnxi/target/gnxi"
+	"ovs-gnxi/target/logging"
+	"ovs-gnxi/target/ovs"
 	"reflect"
 
 	"fmt"
-	"github.com/op/go-logging"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"net/http"
@@ -25,10 +26,7 @@ import (
 	pb "github.com/openconfig/gnmi/proto/gnmi"
 )
 
-var (
-	logModule = "gnxi-target"
-	log       = logging.MustGetLogger(logModule)
-)
+var log = logging.New("ovs-gnxi")
 
 type server struct {
 	*gnmi.Server
@@ -77,13 +75,12 @@ func main() {
 	}
 	go prometheusInstance.StartPrometheus()
 
-	client, err := NewOVSClient("ovs.gnxi.lan", "tcp", "6640", "certs/target.key", "certs/target.crt", "certs/ca.crt")
+	client, err := ovs.NewClient("ovs.gnxi.lan", "tcp", "6640", "certs/target.key", "certs/target.crt", "certs/ca.crt")
 	if err != nil {
 		log.Fatal("Unable to initialize OVS Client\n")
 	}
 	// defer client.Connection.Disconnect()
 
-	log.Info(client.String())
 	client.InitializeConfig()
 
 	//
@@ -121,12 +118,12 @@ func main() {
 	opts := credentials.ServerCredentials()
 	g := grpc.NewServer(opts...)
 
-	configData, err := ioutil.ReadFile("openconfig-openflow.json")
+	config, err := gnxi.GenerateConfig(client.Config)
 	if err != nil {
-		log.Fatalf("Error reading config file: %v", err)
+		log.Fatalf("Unable to generate gNMI Config: %v", err)
 	}
 
-	s, err := newServer(model, configData)
+	s, err := newServer(model, []byte(config))
 	if err != nil {
 		log.Fatalf("Error on creating gNMI target: %v", err)
 	}

@@ -1,10 +1,11 @@
-package main
+package ovs
 
 import (
 	"errors"
 	"fmt"
 	"github.com/socketplane/libovsdb"
-	"reflect"
+	"ovs-gnxi/target/logging"
+	"strconv"
 	"strings"
 )
 
@@ -15,57 +16,29 @@ const (
 	InterfaceTable  = "Interface"
 )
 
+var log = logging.New("ovs-gnxi")
+
 var quit chan bool
 var update chan *libovsdb.TableUpdates
-var cache map[string]map[string]libovsdb.Row
 
-type System struct {
-	uuid     string
-	Version  string
-	Hostname string
-}
-
-func (s *System) String() string {
-	return fmt.Sprintf("System(uuid: \"%v\", Version: \"%v\", Hostname: \"%v\")", s.uuid, s.Version, s.Hostname)
-}
-
-type OpenFlowController struct {
-	uuid     string
-	Name     string
-	Address  string
-	Protocol string
-	Port     string
-}
-
-type Interface struct {
-	uuid       string
-	Name       string
-	MTU        string
-	Status     string
-	Statistics string
-}
-
-func (c *OpenFlowController) String() string {
-	return fmt.Sprintf("OpenFlowController(uuid: \"%v\", Name: \"%v\", Address: \"%v\", Protocol: \"%v\", Port: \"%v\")", c.uuid, c.Name, c.Address, c.Protocol, c.Port)
-}
-
-type OVSClient struct {
+type Client struct {
 	Address    string
 	Protocol   string
 	Port       string
 	Connection *libovsdb.OvsdbClient
 	Database   string
-	Config     []byte
+	Notifier   *Notifier
+	Config     *Config
 }
 
-func (o *OVSClient) String() string {
+func (o *Client) String() string {
 	return fmt.Sprintf("OVSClient(Address: \"%v\", Protocol: \"%v\", Port: \"%v\")", o.Address, o.Protocol, o.Port)
 }
 
-func NewOVSClient(address, protocol, port, privateKeyPath, publicKeyPath, caPath string) (*OVSClient, error) {
+func NewClient(address, protocol, port, privateKeyPath, publicKeyPath, caPath string) (*Client, error) {
 	var err error
 
-	o := OVSClient{Address: address, Protocol: protocol, Port: port, Database: DefaultDatabase}
+	o := Client{Address: address, Protocol: protocol, Port: port, Database: DefaultDatabase, Config: NewConfig()}
 
 	o.Connection, err = libovsdb.ConnectUsingProtocolWithTLS(o.Protocol, fmt.Sprintf("%v:%v", o.Address, o.Port), privateKeyPath, publicKeyPath, caPath)
 	if err != nil {
@@ -75,31 +48,42 @@ func NewOVSClient(address, protocol, port, privateKeyPath, publicKeyPath, caPath
 	return &o, nil
 }
 
-func (o *OVSClient) InitializeConfig() {
-	system, err := o.GetSystemInformation()
-	if err == nil {
-		log.Info(system)
-	}
-
-	controller, err := o.GetOpenFlowControllers()
-	if err == nil {
-		log.Info(controller)
-	}
-
-	err = o.SetOpenFlowController(controller)
-
-	controller, err = o.GetOpenFlowControllers()
-	if err == nil {
-		log.Info(controller)
-	}
-
-	err = o.MonitorAll()
+func (o *Client) InitializeConfig() {
+	err := o.MonitorAll()
 	if err != nil {
 		log.Error(err)
 	}
+
+	log.Info("TEST")
+	o.Config.DumpRawCache()
+
+	/*
+		controller, err := o.GetOpenFlowControllers()
+		if err == nil {
+			log.Info(controller)
+		}
+
+		log.Info(controller)
+
+		system, err := o.GetSystemInformation()
+		if err == nil {
+			log.Info(system)
+		}
+
+		controller, err := o.GetOpenFlowControllers()
+		if err == nil {
+			log.Info(controller)
+		}
+
+		err = o.SetOpenFlowController(controller)
+
+		controller, err = o.GetOpenFlowControllers()
+		if err == nil {
+			log.Info(controller)
+		}*/
 }
 
-func (o *OVSClient) GetSystemInformation() (*System, error) {
+func (o *Client) GetSystemInformation() (*System, error) {
 	selectOp := libovsdb.Operation{
 		Op:    "select",
 		Table: SystemTable,
@@ -132,7 +116,7 @@ func (o *OVSClient) GetSystemInformation() (*System, error) {
 	return nil, errors.New("unable to get system information")
 }
 
-func (o *OVSClient) GetOpenFlowControllers() (*OpenFlowController, error) {
+func (o *Client) GetOpenFlowControllers() (*OpenFlowController, error) {
 	selectOp := libovsdb.Operation{
 		Op:    "select",
 		Table: ControllerTable,
@@ -157,13 +141,19 @@ func (o *OVSClient) GetOpenFlowControllers() (*OpenFlowController, error) {
 	if ok {
 		uuid := reply[0].Rows[0]["_uuid"].([]interface{})[1].(string)
 		s := strings.Split(reply[0].Rows[0]["target"].(string), ":")
-		return &OpenFlowController{uuid: uuid, Name: uuid, Protocol: s[0], Address: s[1], Port: s[2]}, nil
+
+		port, err := strconv.ParseUint(s[2], 16, 16)
+		if err != nil {
+			return nil, err
+		}
+
+		return &OpenFlowController{uuid: uuid, Name: uuid, Protocol: s[0], Address: s[1], Port: uint16(port)}, nil
 	}
 
 	return nil, errors.New("unable to get openflow controller information")
 }
 
-func (o *OVSClient) GetOpenFlowController(uuid string) (*OpenFlowController, error) {
+func (o *Client) GetOpenFlowController(uuid string) (*OpenFlowController, error) {
 	condition := libovsdb.NewCondition("_uuid", "==", uuid)
 
 	selectOp := libovsdb.Operation{
@@ -190,13 +180,19 @@ func (o *OVSClient) GetOpenFlowController(uuid string) (*OpenFlowController, err
 	}
 	if ok {
 		s := strings.Split(reply[0].Rows[0]["target"].(string), ":")
-		return &OpenFlowController{Protocol: s[0], Address: s[1], Port: s[2]}, nil
+
+		port, err := strconv.ParseUint(s[2], 16, 16)
+		if err != nil {
+			return nil, err
+		}
+
+		return &OpenFlowController{Protocol: s[0], Address: s[1], Port: uint16(port)}, nil
 	}
 
 	return nil, errors.New("unable to get openflow controller information")
 }
 
-func (o *OVSClient) SetOpenFlowController(controller *OpenFlowController) error {
+func (o *Client) SetOpenFlowController(controller *OpenFlowController) error {
 	condition := libovsdb.NewCondition("_uuid", "==", libovsdb.UUID{GoUUID: controller.uuid})
 
 	row := make(map[string]interface{})
@@ -235,10 +231,11 @@ func (o *OVSClient) SetOpenFlowController(controller *OpenFlowController) error 
 }
 
 type Notifier struct {
+	config *Config
 }
 
 func (n Notifier) Update(context interface{}, tableUpdates libovsdb.TableUpdates) {
-	populateCache(tableUpdates)
+	n.config.SyncCache(tableUpdates)
 	update <- &tableUpdates
 }
 func (n Notifier) Locked([]interface{}) {
@@ -263,26 +260,9 @@ func receivedMonitorUpdate() {
 
 }
 
-func populateCache(updates libovsdb.TableUpdates) {
-	for table, tableUpdate := range updates.Updates {
-		if _, ok := cache[table]; !ok {
-			cache[table] = make(map[string]libovsdb.Row)
-		}
-		for uuid, row := range tableUpdate.Rows {
-			empty := libovsdb.Row{}
-			if !reflect.DeepEqual(row.New, empty) {
-				cache[table][uuid] = row.New
-			} else {
-				delete(cache[table], uuid)
-			}
-		}
-	}
-}
-
-func (o *OVSClient) MonitorAll() error {
+func (o *Client) MonitorAll() error {
 	quit = make(chan bool)
 	update = make(chan *libovsdb.TableUpdates)
-	cache = make(map[string]map[string]libovsdb.Row)
 
 	request := libovsdb.MonitorRequest{
 		Select: libovsdb.MonitorSelect{
@@ -298,8 +278,8 @@ func (o *OVSClient) MonitorAll() error {
 	requests[ControllerTable] = request
 	requests[InterfaceTable] = request
 
-	var notifier Notifier
-	o.Connection.Register(notifier)
+	o.Notifier = &Notifier{config: o.Config}
+	o.Connection.Register(o.Notifier)
 
 	initial, err := o.Connection.Monitor(DefaultDatabase, "", requests)
 	if err != nil {

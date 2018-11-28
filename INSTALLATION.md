@@ -144,6 +144,8 @@ govendor add +external
 ```bash
 vagrant rsync-auto
 vagrant ssh ovs-gnxi
+scripts/generate_certs.sh
+scripts/build_all.sh
 GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o gnxi_target
 docker-compose up -d --force-recreate --build target
 docker logs target
