@@ -1,7 +1,6 @@
 package logging
 
 import (
-	"fmt"
 	"os"
 	"sync"
 
@@ -19,8 +18,6 @@ type Logger struct {
 }
 
 func New(tag string) *Logger {
-	fmt.Println("TEST")
-
 	once.Do(func() {
 		if instance == nil {
 			instance = make(map[string]*Logger)

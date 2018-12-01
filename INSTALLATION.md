@@ -94,7 +94,9 @@ docker exec -i -t $CONTAINER_ID_OVS bash
 #### Container: OVS (mininet)
 ```bash
 screen -ls
+screen -d -m bash -c "command1 ; command2 ; command3"
 screen -r mininet
+h1 ping h2
 # CTRL+a d
 ovs-ofctl -O OpenFlow13 dump-flows sw1
 ```
@@ -144,9 +146,9 @@ govendor add +external
 ```bash
 vagrant rsync-auto
 vagrant ssh ovs-gnxi
-scripts/generate_certs.sh
-scripts/build_all.sh
-GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o gnxi_target
+cd go/src/ovs-gnxi/scripts
+generate_certs.sh
+build_all.sh
 docker-compose up -d --force-recreate --build target
 docker logs target
 ```
@@ -155,7 +157,11 @@ docker logs target
 ```bash
 GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o gnxi_client
 docker-compose up -d --force-recreate --build client
-gnmi_get -target_addr target:10161 -key certs/client.key -cert certs/client.crt -ca certs/ca.crt -target_name server.gnxi.lan -alsologtostderr \
+
+gnmi_get -target_addr target:10161 -key certs/client.key -cert certs/client.crt -ca certs/ca.crt -target_name target.gnxi.lan -alsologtostderr \
+  -xpath "/system/openflow/controllers/controller[name=e2cab5f5-c683-4e97-804c-cf39a61c9967]/connections/connection[aux-id=0]/config/address"
+
+gnmi_get -target_addr target:10161 -key certs/client.key -cert certs/client.crt -ca certs/ca.crt -target_name target.gnxi.lan -alsologtostderr \
   -xpath "/system/openflow/agent/config/datapath-id" \
   -xpath "/system/openflow/controllers/controller[name=main]/connections/connection[aux-id=0]/config/address"
 ```

@@ -2,28 +2,27 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"github.com/google/gnxi/gnmi"
 	"github.com/google/gnxi/gnmi/modeldata"
 	"github.com/google/gnxi/gnmi/modeldata/gostruct"
 	"github.com/google/gnxi/utils/credentials"
+	pb "github.com/openconfig/gnmi/proto/gnmi"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/reflection"
 	"google.golang.org/grpc/status"
 	"net"
+	"net/http"
 	"os"
 	"ovs-gnxi/target/gnxi"
 	"ovs-gnxi/target/logging"
 	"ovs-gnxi/target/ovs"
 	"reflect"
-
-	"fmt"
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"net/http"
-
-	pb "github.com/openconfig/gnmi/proto/gnmi"
+	"sync"
 )
 
 var log = logging.New("ovs-gnxi")
@@ -62,26 +61,21 @@ func (s *server) Set(ctx context.Context, req *pb.SetRequest) (*pb.SetResponse, 
 	return s.Server.Set(ctx, req)
 }
 
-func main() {
-	defer os.Exit(0)
-	defer log.Info("Exiting Open vSwitch gNXI interface\n")
+func RunPrometheus(wg *sync.WaitGroup, instance *PrometheusMonitoringInstance) {
+	defer wg.Done()
+	instance.StartPrometheus()
+	log.Error("Prometheus exit")
+}
 
-	log.Info("Starting Open vSwitch gNXI interface\n")
+func RunOVSClient(wg *sync.WaitGroup, client *ovs.Client) {
+	defer wg.Done()
+	client.StartMonitorAll()
+	log.Error("OVS Client exit")
+}
 
-	prometheusInstance, err := NewPrometheusMonitoringInstance("0.0.0.0", "8080")
-	if err != nil {
-		log.Errorf("Unable to configure Prometheus Monitoring: %v", err)
-		os.Exit(1)
-	}
-	go prometheusInstance.StartPrometheus()
-
-	client, err := ovs.NewClient("ovs.gnxi.lan", "tcp", "6640", "certs/target.key", "certs/target.crt", "certs/ca.crt")
-	if err != nil {
-		log.Fatal("Unable to initialize OVS Client\n")
-	}
-	// defer client.Connection.Disconnect()
-
-	client.InitializeConfig()
+func RunGNMIServer(wg *sync.WaitGroup, client *ovs.Client) {
+	defer wg.Done()
+	<-client.Config.Initialized
 
 	//
 	//
@@ -123,6 +117,8 @@ func main() {
 		log.Fatalf("Unable to generate gNMI Config: %v", err)
 	}
 
+	log.Info(config)
+
 	s, err := newServer(model, []byte(config))
 	if err != nil {
 		log.Fatalf("Error on creating gNMI target: %v", err)
@@ -145,11 +141,37 @@ func main() {
 	//
 	//
 
-	run()
+	log.Error("GNMI Server exit")
 }
 
-func run() {
-	select {}
+func main() {
+	defer os.Exit(0)
+	defer log.Info("Exiting Open vSwitch gNXI interface\n")
+
+	log.Info("Starting Open vSwitch gNXI interface\n")
+
+	var wg sync.WaitGroup
+	wg.Add(3)
+
+	prometheusInstance, err := NewPrometheusMonitoringInstance("0.0.0.0", "8080")
+	if err != nil {
+		log.Errorf("Unable to configure Prometheus Monitoring: %v", err)
+		os.Exit(1)
+	}
+
+	go RunPrometheus(&wg, prometheusInstance)
+
+	client, err := ovs.NewClient("ovs.gnxi.lan", "tcp", "6640", "certs/target.key", "certs/target.crt", "certs/ca.crt")
+	if err != nil {
+		log.Fatal("Unable to initialize OVS Client\n")
+	}
+	defer client.Connection.Disconnect()
+
+	go RunOVSClient(&wg, client)
+
+	go RunGNMIServer(&wg, client)
+
+	wg.Wait()
 }
 
 type PrometheusMonitoringInstance struct {
