@@ -40,7 +40,8 @@ func NewClient(address, protocol, port, privateKeyPath, publicKeyPath, caPath st
 
 	o.Connection, err = libovsdb.ConnectUsingProtocolWithTLS(o.Protocol, fmt.Sprintf("%v:%v", o.Address, o.Port), privateKeyPath, publicKeyPath, caPath)
 	if err != nil {
-		log.Fatalf("failed to dial: %v", err)
+		log.Errorf("failed to dial: %v", err)
+		return nil, err
 	}
 
 	return &o, nil

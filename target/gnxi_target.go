@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"github.com/google/gnxi/gnmi"
 	"github.com/google/gnxi/gnmi/modeldata"
-	"github.com/google/gnxi/gnmi/modeldata/gostruct"
 	"github.com/google/gnxi/utils/credentials"
 	pb "github.com/openconfig/gnmi/proto/gnmi"
 	"github.com/prometheus/client_golang/prometheus"
@@ -18,6 +17,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"ovs-gnxi/generated/ocstruct"
 	"ovs-gnxi/target/gnxi"
 	"ovs-gnxi/target/logging"
 	"ovs-gnxi/target/ovs"
@@ -92,10 +92,10 @@ func RunGNMIServer(wg *sync.WaitGroup, client *ovs.Client) {
 	//
 
 	model := gnmi.NewModel(modeldata.ModelData,
-		reflect.TypeOf((*gostruct.Device)(nil)),
-		gostruct.SchemaTree["Device"],
-		gostruct.Unmarshal,
-		gostruct.ΛEnum)
+		reflect.TypeOf((*ocstruct.Device)(nil)),
+		ocstruct.SchemaTree["Device"],
+		ocstruct.Unmarshal,
+		ocstruct.ΛEnum)
 
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Supported models:\n")
@@ -161,10 +161,14 @@ func main() {
 
 	go RunPrometheus(&wg, prometheusInstance)
 
+	log.Info("Initializing OVS Client...")
+
 	client, err := ovs.NewClient("ovs.gnxi.lan", "tcp", "6640", "certs/target.key", "certs/target.crt", "certs/ca.crt")
 	if err != nil {
-		log.Fatal("Unable to initialize OVS Client\n")
+		log.Errorf("Unable to initialize OVS Client: %v", err)
+		os.Exit(1)
 	}
+
 	defer client.Connection.Disconnect()
 
 	go RunOVSClient(&wg, client)

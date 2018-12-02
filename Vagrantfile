@@ -46,5 +46,12 @@ Vagrant.configure("2") do |config|
     echo "GOBIN=$GOPATH/bin" >> /etc/environment
     echo "PATH=$GOBIN:${PATH}" >> /etc/environment
     mkdir -p "$GOPATH"
+    cd /root/go/src/ovs-gnxi/scripts/
+    ./generate_certs.sh > /dev/null 2>&1 &
+    ./build_all.sh > /dev/null 2>&1 &
+    cd ..
+    docker-compose up -d --force-recreate --build
+    docker-compose up -d --force-recreate --build target
+    cd
   SHELL
 end

@@ -2,6 +2,8 @@
 
 # Source: https://github.com/faucetsdn/gnmi
 
+OVSGNXI=$HOME/go/src/ovs-gnxi
+
 # Generate CA Private Key
 openssl req -newkey rsa:4096 -nodes -keyout ca.key -subj "/C=AT/ST=Vienna/L=Test/O=Test/OU=Test/CN=ca.gnxi.lan"
 # Generate CA Certifiacate Signing Request
@@ -43,10 +45,10 @@ openssl verify -verbose -CAfile ca.crt client.crt
 # Remove unnecessary cert files
 rm -f ca.key ca.csr ovs.csr target.csr client.csr
 # Copy cert files to OVS
-cp -f ./{ca.crt,ovs.crt,ovs.key} ../docker/ovs/certs
+cp -f ./{ca.crt,ovs.crt,ovs.key} $OVSGNXI/docker/ovs/certs
 # Copy cert files to Target
-cp -f ./{ca.crt,target.crt,target.key} ../docker/target/certs
+cp -f ./{ca.crt,target.crt,target.key} $OVSGNXI/docker/target/certs
 # Copy cert files to Client
-cp -f ./{ca.crt,client.crt,client.key} ../docker/client/certs
+cp -f ./{ca.crt,client.crt,client.key} $OVSGNXI/docker/client/certs
 # Cleanup temporary cert files
 rm -f ca.srl ca.crt ovs.crt ovs.key target.crt target.key client.crt client.key

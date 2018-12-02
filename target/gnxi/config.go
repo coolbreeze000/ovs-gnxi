@@ -48,10 +48,10 @@ func GenerateConfig(config *ovs.Config) (string, error) {
 		o.Mtu = ygot.Uint16(i.MTU)
 
 		o.Counters = &oc.Interface_Counters{
-			//InPkts: ygot.Uint64(i.Statistics.ReceivedPackets),
-			InErrors:   ygot.Uint64(i.Statistics.ReceivedErrors),
-			InDiscards: ygot.Uint64(i.Statistics.ReceivedDropped),
-			//OutPkts: ygot.Uint64(i.Statistics.TransmittedPackets),
+			InPkts:      ygot.Uint64(i.Statistics.ReceivedPackets),
+			InErrors:    ygot.Uint64(i.Statistics.ReceivedErrors),
+			InDiscards:  ygot.Uint64(i.Statistics.ReceivedDropped),
+			OutPkts:     ygot.Uint64(i.Statistics.TransmittedPackets),
 			OutErrors:   ygot.Uint64(i.Statistics.TransmittedErrors),
 			OutDiscards: ygot.Uint64(i.Statistics.TransmittedDropped),
 		}
@@ -69,6 +69,7 @@ func GenerateConfig(config *ovs.Config) (string, error) {
 		n, err := c.NewConnection(0)
 		n.Address = ygot.String(i.Target.Address)
 		n.Port = ygot.Uint16(i.Target.Port)
+		n.Connected = ygot.Bool(i.Connected)
 
 		switch protocol := i.Target.Protocol; protocol {
 		case "tcp":

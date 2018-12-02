@@ -30,13 +30,14 @@ func (t *OpenFlowControllerTarget) String() string {
 }
 
 type OpenFlowController struct {
-	uuid   string
-	Name   string
-	Target *OpenFlowControllerTarget
+	uuid      string
+	Name      string
+	Connected bool
+	Target    *OpenFlowControllerTarget
 }
 
 func (c *OpenFlowController) String() string {
-	return fmt.Sprintf("OpenFlowController(uuid: \"%v\", Name: \"%v\", Address: \"%v\", Protocol: \"%v\", Port: \"%v\")", c.uuid, c.Name, c.Target.Address, c.Target.Protocol, c.Target.Port)
+	return fmt.Sprintf("OpenFlowController(uuid: \"%v\", Name: \"%v\", Connected: \"%v\", Address: \"%v\", Protocol: \"%v\", Port: \"%v\")", c.uuid, c.Name, c.Connected, c.Target.Address, c.Target.Protocol, c.Target.Port)
 }
 
 func ParseOpenFlowControllerTarget(target string) (*OpenFlowControllerTarget, error) {
@@ -108,8 +109,6 @@ func (c *Config) SyncCache(updates *libovsdb.TableUpdates) {
 		c.initializeCacheTableIfNotExists(tableName)
 
 		for uuid, row := range tableUpdate.Rows {
-			log.Debug(row)
-
 			empty := libovsdb.Row{}
 			if !reflect.DeepEqual(row.New, empty) {
 				c.rawCache[tableName][uuid] = row.New
@@ -146,15 +145,27 @@ func (c *Config) UpdateObjectCacheEntry(tableName, uuid string, row libovsdb.Row
 		}
 
 		c.ObjectCache.Controllers[uuid] = &OpenFlowController{
-			uuid:   uuid,
-			Name:   uuid,
-			Target: target,
+			uuid:      uuid,
+			Name:      uuid,
+			Connected: row.Fields["is_connected"].(bool),
+			Target:    target,
 		}
 	case InterfaceTable:
+		var mtu uint16
+
+		switch row.Fields["mtu"].(type) {
+		case float64:
+			mtu = uint16(row.Fields["mtu"].(float64))
+		case libovsdb.OvsSet:
+			log.Errorf("Unable to perform correct type conversion OvsSet for interface mtu: %v", row)
+		default:
+			log.Errorf("Unable to perform correct type conversion for interface mtu: %v", row)
+		}
+
 		c.ObjectCache.Interfaces[uuid] = &Interface{
 			uuid:        uuid,
 			Name:        uuid,
-			MTU:         uint16(row.Fields["mtu"].(float64)),
+			MTU:         mtu,
 			AdminStatus: row.Fields["admin_state"].(string),
 			LinkStatus:  row.Fields["link_state"].(string),
 			Statistics: &InterfaceStatistics{

@@ -144,11 +144,12 @@ govendor add +external
 ### Sync Changes for Development
 
 ```bash
+vagrant destroy --force
+vagrant up
 vagrant rsync-auto
 vagrant ssh ovs-gnxi
 cd go/src/ovs-gnxi/scripts
-generate_certs.sh
-build_all.sh
+./build_all.sh
 docker-compose up -d --force-recreate --build target
 docker logs target
 ```
