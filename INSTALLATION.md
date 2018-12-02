@@ -152,6 +152,8 @@ cd go/src/ovs-gnxi/scripts
 ./build_all.sh
 docker-compose up -d --force-recreate --build target
 docker logs target
+
+./build_all.sh && docker-compose up -d --force-recreate --build target && docker logs target -f
 ```
 
 ### Test Client
