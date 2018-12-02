@@ -7,7 +7,10 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"sync"
 )
+
+type ConfigCallback func(config *Config) error
 
 type System struct {
 	uuid     string
@@ -43,7 +46,7 @@ func (c *OpenFlowController) String() string {
 func ParseOpenFlowControllerTarget(target string) (*OpenFlowControllerTarget, error) {
 	s := strings.Split(target, ":")
 
-	port, err := strconv.ParseUint(s[2], 16, 16)
+	port, err := strconv.ParseUint(s[2], 10, 16)
 	if err != nil {
 		return nil, err
 	}
@@ -85,11 +88,13 @@ type Config struct {
 		Controllers map[string]*OpenFlowController
 		Interfaces  map[string]*Interface
 	}
+	mu          sync.RWMutex
+	callback    ConfigCallback
 	Initialized chan struct{}
 }
 
-func NewConfig() *Config {
-	c := Config{rawCache: make(map[string]map[string]libovsdb.Row), Initialized: make(chan struct{}), ObjectCache: struct {
+func NewConfig(callback ConfigCallback) *Config {
+	c := Config{rawCache: make(map[string]map[string]libovsdb.Row), callback: callback, Initialized: make(chan struct{}), ObjectCache: struct {
 		System      *System
 		Controllers map[string]*OpenFlowController
 		Interfaces  map[string]*Interface
@@ -103,6 +108,9 @@ func (c *Config) InitializeCache(updates *libovsdb.TableUpdates) {
 }
 
 func (c *Config) SyncCache(updates *libovsdb.TableUpdates) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
 	log.Debug("Syncing config cache...")
 
 	for tableName, tableUpdate := range updates.Updates {
@@ -121,6 +129,12 @@ func (c *Config) SyncCache(updates *libovsdb.TableUpdates) {
 				err := c.DeleteObjectCacheEntry(tableName, uuid)
 				log.Error(err)
 			}
+		}
+	}
+
+	if c.callback != nil {
+		if err := c.callback(c); err != nil {
+			log.Errorf("Config callback error: %v", err)
 		}
 	}
 
@@ -217,4 +231,11 @@ func (c *Config) DumpRawCache() {
 
 func (c *Config) DumpObjectCache() {
 	log.Debug(c.ObjectCache)
+}
+
+func (c *Config) OverwriteCallback(callback ConfigCallback) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	c.callback = callback
 }

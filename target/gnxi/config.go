@@ -9,7 +9,7 @@ import (
 
 var log = logging.New("ovs-gnxi")
 
-func GenerateConfig(config *ovs.Config) (string, error) {
+func GenerateConfig(config *ovs.Config) ([]byte, error) {
 	log.Info("Start generating initial gNMI config from OVS system source...")
 	log.Debugf("Using following initial config data: %v", config.ObjectCache)
 
@@ -22,7 +22,7 @@ func GenerateConfig(config *ovs.Config) (string, error) {
 
 	s, err := d.NewComponent("os")
 	if err != nil {
-		return "", err
+		return []byte(""), err
 	}
 
 	s.Type = &oc.Component_Type_Union_E_OpenconfigPlatformTypes_OPENCONFIG_SOFTWARE_COMPONENT{
@@ -33,7 +33,7 @@ func GenerateConfig(config *ovs.Config) (string, error) {
 	for _, i := range config.ObjectCache.Interfaces {
 		o, err := d.NewInterface(i.Name)
 		if err != nil {
-			return "", err
+			return []byte(""), err
 		}
 
 		switch adminStatus := i.AdminStatus; adminStatus {
@@ -57,14 +57,14 @@ func GenerateConfig(config *ovs.Config) (string, error) {
 		}
 
 		if err := d.Interface[i.Name].Validate(); err != nil {
-			return "", err
+			return []byte(""), err
 		}
 	}
 
 	for _, i := range config.ObjectCache.Controllers {
 		c, err := d.System.Openflow.NewController(i.Name)
 		if err != nil {
-			return "", err
+			return []byte(""), err
 		}
 		n, err := c.NewConnection(0)
 		n.Address = ygot.String(i.Target.Address)
@@ -89,8 +89,8 @@ func GenerateConfig(config *ovs.Config) (string, error) {
 		},
 	})
 	if err != nil {
-		return "", err
+		return []byte(""), err
 	}
 
-	return j, nil
+	return []byte(j), nil
 }

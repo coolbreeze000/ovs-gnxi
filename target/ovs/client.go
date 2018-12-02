@@ -33,10 +33,10 @@ func (o *Client) String() string {
 	return fmt.Sprintf("OVSClient(Address: \"%v\", Protocol: \"%v\", Port: \"%v\")", o.Address, o.Protocol, o.Port)
 }
 
-func NewClient(address, protocol, port, privateKeyPath, publicKeyPath, caPath string) (*Client, error) {
+func NewClient(address, protocol, port, privateKeyPath, publicKeyPath, caPath string, config *Config) (*Client, error) {
 	var err error
 
-	o := Client{Address: address, Protocol: protocol, Port: port, Database: DefaultDatabase, Config: NewConfig()}
+	o := Client{Address: address, Protocol: protocol, Port: port, Database: DefaultDatabase, Config: config}
 
 	o.Connection, err = libovsdb.ConnectUsingProtocolWithTLS(o.Protocol, fmt.Sprintf("%v:%v", o.Address, o.Port), privateKeyPath, publicKeyPath, caPath)
 	if err != nil {

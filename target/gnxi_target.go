@@ -3,22 +3,19 @@ package main
 import (
 	"flag"
 	"fmt"
-	"github.com/google/gnxi/gnmi"
 	"github.com/google/gnxi/gnmi/modeldata"
 	"github.com/google/gnxi/utils/credentials"
 	pb "github.com/openconfig/gnmi/proto/gnmi"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"golang.org/x/net/context"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/reflection"
-	"google.golang.org/grpc/status"
 	"net"
 	"net/http"
 	"os"
 	"ovs-gnxi/generated/ocstruct"
 	"ovs-gnxi/target/gnxi"
+	"ovs-gnxi/target/gnxi/gnmi"
 	"ovs-gnxi/target/logging"
 	"ovs-gnxi/target/ovs"
 	"reflect"
@@ -27,69 +24,51 @@ import (
 
 var log = logging.New("ovs-gnxi")
 
-type server struct {
-	*gnmi.Server
-}
-
-func newServer(model *gnmi.Model, config []byte) (*server, error) {
-	s, err := gnmi.NewServer(model, config, nil)
-	if err != nil {
-		return nil, err
-	}
-	return &server{Server: s}, nil
-}
-
-// Get overrides the Get func of gnmi.Target to provide user auth.
-func (s *server) Get(ctx context.Context, req *pb.GetRequest) (*pb.GetResponse, error) {
-	msg, ok := credentials.AuthorizeUser(ctx)
-	if !ok {
-		log.Infof("denied a Get request: %v", msg)
-		return nil, status.Error(codes.PermissionDenied, msg)
-	}
-	log.Infof("allowed a Get request: %v", msg)
-	return s.Server.Get(ctx, req)
-}
-
-// Set overrides the Set func of gnmi.Target to provide user auth.
-func (s *server) Set(ctx context.Context, req *pb.SetRequest) (*pb.SetResponse, error) {
-	msg, ok := credentials.AuthorizeUser(ctx)
-	if !ok {
-		log.Infof("denied a Set request: %v", msg)
-		return nil, status.Error(codes.PermissionDenied, msg)
-	}
-	log.Infof("allowed a Set request: %v", msg)
-	return s.Server.Set(ctx, req)
-}
-
-func RunPrometheus(wg *sync.WaitGroup, instance *PrometheusMonitoringInstance) {
-	defer wg.Done()
+func RunPrometheus(instance *PrometheusMonitoringInstance) {
 	instance.StartPrometheus()
 	log.Error("Prometheus exit")
 }
 
 func RunOVSClient(wg *sync.WaitGroup, client *ovs.Client) {
+	defer client.Connection.Disconnect()
 	defer wg.Done()
 	client.StartMonitorAll()
 	log.Error("OVS Client exit")
 }
 
-func RunGNMIServer(wg *sync.WaitGroup, client *ovs.Client) {
-	defer wg.Done()
+func CreateOVSClient(broker *SystemBroker, config *ovs.Config) *ovs.Client {
+	log.Info("Initializing OVS Client...")
+
+	client, err := ovs.NewClient("ovs.gnxi.lan", "tcp", "6640", "certs/target.key", "certs/target.crt", "certs/ca.crt", config)
+	if err != nil {
+		log.Errorf("Unable to initialize OVS Client: %v", err)
+		os.Exit(1)
+	}
+
+	return client
+}
+
+func setGNMIServerFlags() {
+	err := flag.Set("ca", "certs/ca.crt")
+	if err != nil {
+		log.Fatalf("Unable to set ca flag: %v", err)
+	}
+	err = flag.Set("cert", "certs/target.crt")
+	if err != nil {
+		log.Fatalf("Unable to set cert flag: %v", err)
+	}
+	err = flag.Set("key", "certs/target.key")
+	if err != nil {
+		log.Fatalf("Unable to set key flag: %v", err)
+	}
+
+	flag.Parse()
+}
+
+func CreateGNMIServer(client *ovs.Client, broker *SystemBroker) *gnmi.Server {
 	<-client.Config.Initialized
 
-	//
-	//
-	//
-	// https://github.com/google/link022/blob/9dbee2acc0d1e02987f94a2c9ced45aa7fbfe91b/agent/gnmi/handler.go
-	// https://github.com/google/link022/blob/master/agent/gnmi/server.go
-
-	flag.Set("ca", "certs/ca.crt")
-	flag.Set("cert", "certs/target.crt")
-	flag.Set("key", "certs/target.key")
-
-	//
-	// Test https://github.com/google/gnxi/blob/master/gnmi_target/gnmi_target.go
-	//
+	setGNMIServerFlags()
 
 	model := gnmi.NewModel(modeldata.ModelData,
 		reflect.TypeOf((*ocstruct.Device)(nil)),
@@ -97,33 +76,28 @@ func RunGNMIServer(wg *sync.WaitGroup, client *ovs.Client) {
 		ocstruct.Unmarshal,
 		ocstruct.ΛEnum)
 
-	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, "Supported models:\n")
-		for _, m := range model.SupportedModels() {
-			fmt.Fprintf(os.Stderr, "  %s\n", m)
-		}
-		fmt.Fprintf(os.Stderr, "\n")
-		fmt.Fprintf(os.Stderr, "Usage of %s:\n", os.Args[0])
-		flag.PrintDefaults()
-	}
-
-	flag.Parse()
-
-	opts := credentials.ServerCredentials()
-	g := grpc.NewServer(opts...)
-
 	config, err := gnxi.GenerateConfig(client.Config)
 	if err != nil {
 		log.Fatalf("Unable to generate gNMI Config: %v", err)
 	}
 
-	log.Info(config)
+	log.Info(fmt.Sprintf("%s", config))
 
-	s, err := newServer(model, []byte(config))
+	s, err := gnmi.NewServer(model, []byte(config), nil)
 	if err != nil {
 		log.Fatalf("Error on creating gNMI target: %v", err)
 	}
-	pb.RegisterGNMIServer(g, s)
+
+	return s
+}
+
+func RunGNMIServer(wg *sync.WaitGroup, server *gnmi.Server) {
+	defer wg.Done()
+
+	opts := credentials.ServerCredentials()
+	g := grpc.NewServer(opts...)
+
+	pb.RegisterGNMIServer(g, server)
 	reflection.Register(g)
 
 	log.Infof("Starting to listen")
@@ -137,10 +111,6 @@ func RunGNMIServer(wg *sync.WaitGroup, client *ovs.Client) {
 		log.Fatalf("Failed to serve: %v", err)
 	}
 
-	//
-	//
-	//
-
 	log.Error("GNMI Server exit")
 }
 
@@ -150,8 +120,10 @@ func main() {
 
 	log.Info("Starting Open vSwitch gNXI interface\n")
 
+	setGNMIServerFlags()
+
 	var wg sync.WaitGroup
-	wg.Add(3)
+	wg.Add(2)
 
 	prometheusInstance, err := NewPrometheusMonitoringInstance("0.0.0.0", "8080")
 	if err != nil {
@@ -159,21 +131,25 @@ func main() {
 		os.Exit(1)
 	}
 
-	go RunPrometheus(&wg, prometheusInstance)
+	go RunPrometheus(prometheusInstance)
 
-	log.Info("Initializing OVS Client...")
+	broker := NewSystemBroker()
 
-	client, err := ovs.NewClient("ovs.gnxi.lan", "tcp", "6640", "certs/target.key", "certs/target.crt", "certs/ca.crt")
-	if err != nil {
-		log.Errorf("Unable to initialize OVS Client: %v", err)
-		os.Exit(1)
-	}
+	ovsConfig := ovs.NewConfig(nil)
 
-	defer client.Connection.Disconnect()
+	client := CreateOVSClient(broker, ovsConfig)
 
 	go RunOVSClient(&wg, client)
 
-	go RunGNMIServer(&wg, client)
+	gnmiServer := CreateGNMIServer(client, broker)
+
+	go RunGNMIServer(&wg, gnmiServer)
+
+	broker.GNMIServer = gnmiServer
+	broker.OVSClient = client
+
+	gnmiServer.OverwriteCallback(broker.GNMIConfigChangeCallback)
+	ovsConfig.OverwriteCallback(broker.OVSConfigChangeCallback)
 
 	wg.Wait()
 }

@@ -1,16 +1,29 @@
-package gnmi
+/* Copyright 2017 Google Inc.
 
-import (
-	"github.com/openconfig/gnmi/cache"
-	"github.com/openconfig/ygot/ygot"
-)
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    https://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+// Package gnmi implements a gnmi server to mock a device with YANG models.
+package gnmi
 
 import (
 	"bytes"
 	"compress/gzip"
 	"encoding/json"
 	"fmt"
+	"github.com/google/gnxi/utils/credentials"
 	"io/ioutil"
+	"ovs-gnxi/target/logging"
 	"reflect"
 	"strconv"
 	"sync"
@@ -21,13 +34,16 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/golang/protobuf/proto"
-	dpb "github.com/golang/protobuf/protoc-gen-go/descriptor"
-	"github.com/openconfig/gnmi/match"
-	pb "github.com/openconfig/gnmi/proto/gnmi"
 	"github.com/openconfig/gnmi/value"
 	"github.com/openconfig/ygot/experimental/ygotutils"
+	"github.com/openconfig/ygot/ygot"
+
+	dpb "github.com/golang/protobuf/protoc-gen-go/descriptor"
+	pb "github.com/openconfig/gnmi/proto/gnmi"
 	cpb "google.golang.org/genproto/googleapis/rpc/code"
 )
+
+var log = logging.New("ovs-gnxi")
 
 // ConfigCallback is the signature of the function to apply a validated config to the physical device.
 type ConfigCallback func(ygot.ValidatedGoStruct) error
@@ -54,25 +70,18 @@ var (
 //		//
 //		// Do something ...
 // }
-
-// Server is the implementation of the gNMI Subcribe API.
 type Server struct {
 	model    *Model
 	callback ConfigCallback
-	config   ygot.ValidatedGoStruct
 
-	c *cache.Cache // The cache queries are performed against.
-	m *match.Match // Structure to match updates against active subscriptions.
-	// subscribeSlots is a channel of size SubscriptionLimit to restrict how many
-	// queries are in flight.
-	subscribeSlots chan struct{}
-	timeout        time.Duration
-	lock           sync.RWMutex
+	config ygot.ValidatedGoStruct
+	mu     sync.RWMutex // mu is the RW lock to protect the access to config
 }
 
 // NewServer creates an instance of Server with given json config.
 func NewServer(model *Model, config []byte, callback ConfigCallback) (*Server, error) {
 	rootStruct, err := model.NewConfigStruct(config)
+
 	if err != nil {
 		return nil, err
 	}
@@ -441,8 +450,15 @@ func (s *Server) Capabilities(ctx context.Context, req *pb.CapabilityRequest) (*
 	}, nil
 }
 
-// Get implements the Get RPC in gNMI spec.
+// Get implements the Get RPC in gNMI spec and provides user auth.
 func (s *Server) Get(ctx context.Context, req *pb.GetRequest) (*pb.GetResponse, error) {
+	msg, ok := credentials.AuthorizeUser(ctx)
+	if !ok {
+		log.Infof("denied a Get request: %v", msg)
+		return nil, status.Error(codes.PermissionDenied, msg)
+	}
+	log.Infof("allowed a Get request: %v", msg)
+
 	if req.GetType() != pb.GetRequest_ALL {
 		return nil, status.Errorf(codes.Unimplemented, "unsupported request type: %s", pb.GetRequest_DataType_name[int32(req.GetType())])
 	}
@@ -509,44 +525,40 @@ func (s *Server) Get(ctx context.Context, req *pb.GetRequest) (*pb.GetResponse, 
 			continue
 		}
 
-		if req.GetUseModels() != nil {
-			return nil, status.Errorf(codes.Unimplemented, "filtering Get using use_models is unsupported, got: %v", req.GetUseModels())
-		}
-
-		// Return IETF JSON by default.
-		jsonEncoder := func() (map[string]interface{}, error) {
-			return ygot.ConstructIETFJSON(nodeStruct, &ygot.RFC7951JSONConfig{AppendModuleName: true})
-		}
-		jsonType := "IETF"
-		buildUpdate := func(b []byte) *pb.Update {
-			return &pb.Update{Path: path, Val: &pb.TypedValue{Value: &pb.TypedValue_JsonIetfVal{JsonIetfVal: b}}}
-		}
-
-		if req.GetEncoding() == pb.Encoding_JSON {
-			jsonEncoder = func() (map[string]interface{}, error) {
-				return ygot.ConstructInternalJSON(nodeStruct)
+		// Return all leaf nodes of the sub-tree.
+		if len(req.GetUseModels()) != len(s.model.modelData) && req.GetEncoding() != pb.Encoding_JSON_IETF {
+			results, err := ygot.TogNMINotifications(nodeStruct, ts, ygot.GNMINotificationsConfig{UsePathElem: true, PathElemPrefix: fullPath.Elem})
+			if err != nil {
+				return nil, status.Errorf(codes.Internal, "error in serializing GoStruct to notifications: %v", err)
 			}
-			jsonType = "Internal"
-			buildUpdate = func(b []byte) *pb.Update {
-				return &pb.Update{Path: path, Val: &pb.TypedValue{Value: &pb.TypedValue_JsonVal{JsonVal: b}}}
+			if len(results) != 1 {
+				return nil, status.Errorf(codes.Internal, "ygot.TogNMINotifications() return %d notifications instead of one", len(results))
 			}
+			notifications[i] = results[0]
+			continue
 		}
 
-		jsonTree, err := jsonEncoder()
+		// Return IETF JSON for the sub-tree.
+		jsonTree, err := ygot.ConstructIETFJSON(nodeStruct, &ygot.RFC7951JSONConfig{AppendModuleName: true})
 		if err != nil {
-			msg := fmt.Sprintf("error in constructing %s JSON tree from requested node: %v", jsonType, err)
+			msg := fmt.Sprintf("error in constructing IETF JSON tree from requested node: %v", err)
 			log.Error(msg)
 			return nil, status.Error(codes.Internal, msg)
 		}
-
 		jsonDump, err := json.Marshal(jsonTree)
 		if err != nil {
-			msg := fmt.Sprintf("error in marshaling %s JSON tree to bytes: %v", jsonType, err)
+			msg := fmt.Sprintf("error in marshaling IETF JSON tree to bytes: %v", err)
 			log.Error(msg)
 			return nil, status.Error(codes.Internal, msg)
 		}
-
-		update := buildUpdate(jsonDump)
+		update := &pb.Update{
+			Path: path,
+			Val: &pb.TypedValue{
+				Value: &pb.TypedValue_JsonIetfVal{
+					JsonIetfVal: jsonDump,
+				},
+			},
+		}
 		notifications[i] = &pb.Notification{
 			Timestamp: ts,
 			Prefix:    prefix,
@@ -557,8 +569,15 @@ func (s *Server) Get(ctx context.Context, req *pb.GetRequest) (*pb.GetResponse, 
 	return &pb.GetResponse{Notification: notifications}, nil
 }
 
-// Set implements the Set RPC in gNMI spec.
+// Set implements the Set RPC in gNMI spec and provides user auth.
 func (s *Server) Set(ctx context.Context, req *pb.SetRequest) (*pb.SetResponse, error) {
+	msg, ok := credentials.AuthorizeUser(ctx)
+	if !ok {
+		log.Infof("denied a Set request: %v", msg)
+		return nil, status.Error(codes.PermissionDenied, msg)
+	}
+	log.Infof("allowed a Set request: %v", msg)
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -604,7 +623,6 @@ func (s *Server) Set(ctx context.Context, req *pb.SetRequest) (*pb.SetResponse, 
 	if err != nil {
 		msg := fmt.Sprintf("error in creating config struct from IETF JSON data: %v", err)
 		log.Error(msg)
-		return nil, status.Error(codes.Internal, msg)
 	}
 	s.config = rootStruct
 	return &pb.SetResponse{
@@ -613,15 +631,27 @@ func (s *Server) Set(ctx context.Context, req *pb.SetRequest) (*pb.SetResponse, 
 	}, nil
 }
 
+// Overwrites the internal gNMI config.
+func (s *Server) OverwriteConfig(jsonConfig []byte) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	rootStruct, err := s.model.NewConfigStruct(jsonConfig)
+	if err != nil {
+		msg := fmt.Sprintf("error in creating config struct from IETF JSON data: %v", err)
+		log.Error(msg)
+	}
+	s.config = rootStruct
+}
+
+func (s *Server) OverwriteCallback(callback ConfigCallback) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.callback = callback
+}
+
 // Subscribe method is not implemented.
 func (s *Server) Subscribe(stream pb.GNMI_SubscribeServer) error {
 	return status.Error(codes.Unimplemented, "Subscribe is not implemented.")
-}
-
-// InternalUpdate is an experimental feature to let the server update its
-// internal states. Use it with your own risk.
-func (s *Server) InternalUpdate(fp func(config ygot.ValidatedGoStruct) error) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return fp(s.config)
 }
