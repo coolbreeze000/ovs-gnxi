@@ -13,7 +13,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// Package gnmi implements a gnmi server to mock a device with YANG models.
+// Package gnmi implements a gnmi server.
 package gnmi
 
 import (
@@ -22,6 +22,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/google/gnxi/utils/credentials"
+	"github.com/openconfig/gnmi/cache"
+	"github.com/openconfig/gnmi/client"
+	"github.com/openconfig/gnmi/coalesce"
+	"github.com/openconfig/gnmi/ctree"
+	"github.com/openconfig/gnmi/path"
+	"google.golang.org/grpc/peer"
+	"io"
 	"io/ioutil"
 	"ovs-gnxi/target/logging"
 	"reflect"
@@ -29,9 +36,12 @@ import (
 	"sync"
 	"time"
 
+	"github.com/openconfig/gnmi/match"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+
+	"errors"
 
 	"github.com/golang/protobuf/proto"
 	"github.com/openconfig/gnmi/value"
@@ -43,53 +53,48 @@ import (
 	cpb "google.golang.org/genproto/googleapis/rpc/code"
 )
 
-var log = logging.New("ovs-gnxi")
-
-// ConfigCallback is the signature of the function to apply a validated config to the physical device.
-type ConfigCallback func(ygot.ValidatedGoStruct) error
-
 var (
 	pbRootPath         = &pb.Path{}
 	supportedEncodings = []pb.Encoding{pb.Encoding_JSON, pb.Encoding_JSON_IETF}
 )
 
-// Server struct maintains the data structure for device config and implements the interface of gnmi server. It supports Capabilities, Get, and Set APIs.
-// Typical usage:
-//	g := grpc.NewServer()
-//	s, err := Server.NewServer(model, config, callback)
-//	pb.NewServer(g, s)
-//	reflection.Register(g)
-//	listen, err := net.Listen("tcp", ":8080")
-//	g.Serve(listen)
-//
-// For a real device, apply the config changes to the hardware in the callback function.
-// Arguments:
-//		newConfig: new root config to be applied on the device.
-// func callback(newConfig ygot.ValidatedGoStruct) error {
-//		// Apply the config to your device and return nil if success. return error if fails.
-//		//
-//		// Do something ...
-// }
-type Server struct {
+var log = logging.New("ovs-gnxi")
+
+// ConfigCallback is the signature of the function to apply a validated config to the physical device.
+type ConfigCallback func(ygot.ValidatedGoStruct) error
+
+// Service struct maintains the data structure for device config and implements the gnmi interface. It supports Capabilities, Get, Set and Subscribe APIs.
+type Service struct {
 	model    *Model
 	callback ConfigCallback
+	config   ygot.ValidatedGoStruct
+	mu       sync.RWMutex // mu is the RW lock to protect the access to config
 
-	config ygot.ValidatedGoStruct
-	mu     sync.RWMutex // mu is the RW lock to protect the access to config
+	c *cache.Cache // The cache queries are performed against.
+	m *match.Match // Structure to match updates against active subscriptions.
+	// subscribeSlots is a channel of size SubscriptionLimit to restrict how many
+	// queries are in flight.
+	subscribeSlots chan struct{}
+	timeout        time.Duration
 }
 
-// NewServer creates an instance of Server with given json config.
-func NewServer(model *Model, config []byte, callback ConfigCallback) (*Server, error) {
+// NewService creates an instance of Service with given json config.
+func NewService(model *Model, config []byte, callback ConfigCallback, subscriptionLimit int) (*Service, error) {
 	rootStruct, err := model.NewConfigStruct(config)
 
 	if err != nil {
 		return nil, err
 	}
-	s := &Server{
+	s := &Service{
 		model:    model,
 		config:   rootStruct,
 		callback: callback,
 	}
+
+	if subscriptionLimit > 0 {
+		s.subscribeSlots = make(chan struct{}, subscriptionLimit)
+	}
+
 	if config != nil && s.callback != nil {
 		if err := s.callback(rootStruct); err != nil {
 			return nil, err
@@ -99,7 +104,7 @@ func NewServer(model *Model, config []byte, callback ConfigCallback) (*Server, e
 }
 
 // checkEncodingAndModel checks whether encoding and models are supported by the server. Return error if anything is unsupported.
-func (s *Server) checkEncodingAndModel(encoding pb.Encoding, models []*pb.ModelData) error {
+func (s *Service) checkEncodingAndModel(encoding pb.Encoding, models []*pb.ModelData) error {
 	hasSupportedEncoding := false
 	for _, supportedEncoding := range supportedEncodings {
 		if encoding == supportedEncoding {
@@ -127,7 +132,7 @@ func (s *Server) checkEncodingAndModel(encoding pb.Encoding, models []*pb.ModelD
 
 // doDelete deletes the path from the json tree if the path exists. If success,
 // it calls the callback function to apply the change to the device hardware.
-func (s *Server) doDelete(jsonTree map[string]interface{}, prefix, path *pb.Path) (*pb.UpdateResult, error) {
+func (s *Service) doDelete(jsonTree map[string]interface{}, prefix, path *pb.Path) (*pb.UpdateResult, error) {
 	// Update json tree of the device config
 	var curNode interface{} = jsonTree
 	pathDeleted := false
@@ -184,7 +189,7 @@ func (s *Server) doDelete(jsonTree map[string]interface{}, prefix, path *pb.Path
 // doReplaceOrUpdate validates the replace or update operation to be applied to
 // the device, modifies the json tree of the config struct, then calls the
 // callback function to apply the operation to the device hardware.
-func (s *Server) doReplaceOrUpdate(jsonTree map[string]interface{}, op pb.UpdateResult_Operation, prefix, path *pb.Path, val *pb.TypedValue) (*pb.UpdateResult, error) {
+func (s *Service) doReplaceOrUpdate(jsonTree map[string]interface{}, op pb.UpdateResult_Operation, prefix, path *pb.Path, val *pb.TypedValue) (*pb.UpdateResult, error) {
 	// Validate the operation.
 	fullPath := gnmiFullPath(prefix, path)
 	emptyNode, stat := ygotutils.NewNode(s.model.structRootType, fullPath)
@@ -277,7 +282,7 @@ func (s *Server) doReplaceOrUpdate(jsonTree map[string]interface{}, op pb.Update
 	}, nil
 }
 
-func (s *Server) toGoStruct(jsonTree map[string]interface{}) (ygot.ValidatedGoStruct, error) {
+func (s *Service) toGoStruct(jsonTree map[string]interface{}) (ygot.ValidatedGoStruct, error) {
 	jsonDump, err := json.Marshal(jsonTree)
 	if err != nil {
 		return nil, fmt.Errorf("error in marshaling IETF JSON tree to bytes: %v", err)
@@ -438,7 +443,7 @@ func setPathWithoutAttribute(op pb.UpdateResult_Operation, curNode map[string]in
 }
 
 // Capabilities returns supported encodings and supported models.
-func (s *Server) Capabilities(ctx context.Context, req *pb.CapabilityRequest) (*pb.CapabilityResponse, error) {
+func (s *Service) Capabilities(ctx context.Context, req *pb.CapabilityRequest) (*pb.CapabilityResponse, error) {
 	ver, err := getGNMIServiceVersion()
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "error in getting gnmi service version: %v", err)
@@ -451,7 +456,7 @@ func (s *Server) Capabilities(ctx context.Context, req *pb.CapabilityRequest) (*
 }
 
 // Get implements the Get RPC in gNMI spec and provides user auth.
-func (s *Server) Get(ctx context.Context, req *pb.GetRequest) (*pb.GetResponse, error) {
+func (s *Service) Get(ctx context.Context, req *pb.GetRequest) (*pb.GetResponse, error) {
 	msg, ok := credentials.AuthorizeUser(ctx)
 	if !ok {
 		log.Infof("denied a Get request: %v", msg)
@@ -570,7 +575,7 @@ func (s *Server) Get(ctx context.Context, req *pb.GetRequest) (*pb.GetResponse, 
 }
 
 // Set implements the Set RPC in gNMI spec and provides user auth.
-func (s *Server) Set(ctx context.Context, req *pb.SetRequest) (*pb.SetResponse, error) {
+func (s *Service) Set(ctx context.Context, req *pb.SetRequest) (*pb.SetResponse, error) {
 	msg, ok := credentials.AuthorizeUser(ctx)
 	if !ok {
 		log.Infof("denied a Set request: %v", msg)
@@ -632,7 +637,7 @@ func (s *Server) Set(ctx context.Context, req *pb.SetRequest) (*pb.SetResponse, 
 }
 
 // Overwrites the internal gNMI config.
-func (s *Server) OverwriteConfig(jsonConfig []byte) {
+func (s *Service) OverwriteConfig(jsonConfig []byte) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -644,14 +649,368 @@ func (s *Server) OverwriteConfig(jsonConfig []byte) {
 	s.config = rootStruct
 }
 
-func (s *Server) OverwriteCallback(callback ConfigCallback) {
+func (s *Service) OverwriteCallback(callback ConfigCallback) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	s.callback = callback
 }
 
-// Subscribe method is not implemented.
-func (s *Server) Subscribe(stream pb.GNMI_SubscribeServer) error {
-	return status.Error(codes.Unimplemented, "Subscribe is not implemented.")
+// Update passes a streaming update to registered clients.
+func (s *Service) Update(n *ctree.Leaf) {
+	switch v := n.Value().(type) {
+	case client.Delete:
+		s.m.Update(n, v.Path)
+	case client.Update:
+		s.m.Update(n, v.Path)
+	case *pb.Notification:
+		p := path.ToStrings(v.Prefix, true)
+		if len(v.Update) > 0 {
+			p = append(p, path.ToStrings(v.Update[0].Path, false)...)
+		} else if len(v.Delete) > 0 {
+			p = append(p, path.ToStrings(v.Delete[0], false)...)
+		}
+		// If neither update nor delete notification exists,
+		// just go with the path in the prefix
+		s.m.Update(n, p)
+	default:
+		log.Errorf("update is not a known type; type is %T", v)
+	}
+}
+
+// addSubscription registers all subscriptions for this client for update matching.
+func addSubscription(m *match.Match, s *pb.SubscriptionList, c *matchClient) (remove func()) {
+	var removes []func()
+	prefix := path.ToStrings(s.Prefix, true)
+	for _, p := range s.Subscription {
+		if p.Path == nil {
+			continue
+		}
+		// TODO(yusufsn) : Origin field in the Path may need to be included
+		path := append(prefix, path.ToStrings(p.Path, false)...)
+		removes = append(removes, m.AddQuery(path, c))
+	}
+	return func() {
+		for _, remove := range removes {
+			remove()
+		}
+	}
+}
+
+// Subscribe is the entry point for the external RPC request of the same name
+// defined in gnmi.proto.
+func (s *Service) Subscribe(stream pb.GNMI_SubscribeServer) error {
+	/*
+		msg, ok := credentials.AuthorizeUser(ctx)
+		if !ok {
+			log.Infof("denied a Get request: %v", msg)
+			return status.Error(codes.PermissionDenied, msg)
+		}
+		log.Infof("allowed a Get request: %v", msg)
+	*/
+
+	c := streamClient{stream: stream}
+	var err error
+	c.sr, err = stream.Recv()
+
+	switch {
+	case err == io.EOF:
+		return nil
+	case err != nil:
+		return err
+	case c.sr.GetSubscribe() == nil:
+		return status.Errorf(codes.InvalidArgument, "request must contain a subscription %#v", c.sr)
+	case c.sr.GetSubscribe().GetPrefix() == nil:
+		return status.Errorf(codes.InvalidArgument, "request must contain a prefix %#v", c.sr)
+	case c.sr.GetSubscribe().GetPrefix().GetTarget() == "":
+		return status.Error(codes.InvalidArgument, "missing target")
+	}
+
+	c.target = c.sr.GetSubscribe().GetPrefix().GetTarget()
+	if !s.c.HasTarget(c.target) {
+		return status.Errorf(codes.NotFound, "no such target: %q", c.target)
+	}
+	peer, _ := peer.FromContext(stream.Context())
+	mode := c.sr.GetSubscribe().Mode
+
+	log.Infof("peer: %v target: %q subscription: %s", peer.Addr, c.target, c.sr)
+	defer log.Infof("peer: %v target %q subscription: end: %q", peer.Addr, c.target, c.sr)
+
+	c.queue = coalesce.NewQueue()
+	defer c.queue.Close()
+
+	// This error channel is buffered to accept errors from all goroutines spawned
+	// for this RPC.  Only the first is ever read and returned causing the RPC to
+	// terminate.
+	errC := make(chan error, 3)
+	c.errC = errC
+
+	switch mode {
+	case pb.SubscriptionList_ONCE:
+		go func() {
+			s.processSubscription(&c)
+			c.queue.Close()
+		}()
+	case pb.SubscriptionList_POLL:
+		go s.processPollingSubscription(&c)
+	case pb.SubscriptionList_STREAM:
+		if c.sr.GetSubscribe().GetUpdatesOnly() {
+			result, err := c.queue.Insert(syncMarker{})
+			if err != nil {
+				return status.Errorf(codes.Unknown, err.Error())
+			}
+			log.Debug(result)
+		}
+		remove := addSubscription(s.m, c.sr.GetSubscribe(), &matchClient{q: c.queue})
+		defer remove()
+		if !c.sr.GetSubscribe().GetUpdatesOnly() {
+			go s.processSubscription(&c)
+		}
+	default:
+		return status.Errorf(codes.InvalidArgument, "Subscription mode %v not recognized", mode)
+	}
+
+	go s.sendStreamingResults(&c)
+
+	return <-errC
+}
+
+type resp struct {
+	stream pb.GNMI_SubscribeServer
+	n      *ctree.Leaf
+	dup    uint32
+	t      *time.Timer // Timer used to timout the subscription.
+}
+
+// sendSubscribeResponse populates and sends a single response returned on
+// the Subscription RPC output stream. Streaming queries send responses for the
+// initial walk of the results as well as streamed updates and use a queue to
+// ensure order.
+func (s *Service) sendSubscribeResponse(r *resp) error {
+	notification, err := MakeSubscribeResponse(r.n.Value(), r.dup)
+	if err != nil {
+		return status.Errorf(codes.Unknown, err.Error())
+	}
+	// Start the timeout before attempting to send.
+	r.t.Reset(s.timeout)
+	// Clear the timeout upon sending.
+	defer r.t.Stop()
+	return r.stream.Send(notification)
+}
+
+// subscribeSync is a response indicating that a Subscribe RPC has successfully
+// returned all matching nodes once for ONCE and POLLING queries and at least
+// once for STREAMING queries.
+var subscribeSync = &pb.SubscribeResponse{Response: &pb.SubscribeResponse_SyncResponse{true}}
+
+type syncMarker struct{}
+
+// cacheClient implements match.Client interface.
+type matchClient struct {
+	q   *coalesce.Queue
+	err error
+}
+
+// Update implements the match.Client Update interface for coalesce.Queue.
+func (c matchClient) Update(n interface{}) {
+	// Stop processing updates on error.
+	if c.err != nil {
+		return
+	}
+	_, c.err = c.q.Insert(n)
+}
+
+type streamClient struct {
+	target string
+	sr     *pb.SubscribeRequest
+	queue  *coalesce.Queue
+	stream pb.GNMI_SubscribeServer
+	errC   chan<- error
+}
+
+// processSubscription walks the cache tree and inserts all of the matching
+// nodes into the coalesce queue followed by a subscriptionSync response.
+func (s *Service) processSubscription(c *streamClient) {
+	var err error
+	// Close the cache client queue on error.
+	defer func() {
+		if err != nil {
+			log.Error(err)
+			c.queue.Close()
+			c.errC <- err
+		}
+	}()
+	if s.subscribeSlots != nil {
+		select {
+		// Register a subscription in the channel, which will block if SubscriptionLimit queries
+		// are already in flight.
+		case s.subscribeSlots <- struct{}{}:
+		default:
+			log.Infof("subscription %s delayed waiting for 1 of %d subscription slots.", c.sr, len(s.subscribeSlots))
+			s.subscribeSlots <- struct{}{}
+			log.Infof("subscription %s resumed", c.sr)
+		}
+		// Remove subscription from the channel upon completion.
+		defer func() {
+			<-s.subscribeSlots
+		}()
+	}
+	if !c.sr.GetSubscribe().GetUpdatesOnly() {
+		// remove the target name from the index string
+		prefix := path.ToStrings(c.sr.GetSubscribe().Prefix, true)[1:]
+		for _, subscription := range c.sr.GetSubscribe().Subscription {
+			path := append(prefix, path.ToStrings(subscription.Path, false)...)
+			s.c.Query(c.target, path, func(_ []string, l *ctree.Leaf, _ interface{}) {
+				// Stop processing query results on error.
+				if err != nil {
+					return
+				}
+				_, err = c.queue.Insert(l)
+			})
+			if err != nil {
+				return
+			}
+		}
+	}
+
+	_, err = c.queue.Insert(syncMarker{})
+}
+
+// processPollingSubscription handles the POLL mode Subscription RPC.
+func (s *Service) processPollingSubscription(c *streamClient) {
+	s.processSubscription(c)
+	log.Infof("polling subscription: first complete response: %q", c.sr)
+	for {
+		if c.queue.IsClosed() {
+			return
+		}
+		// Subsequent receives are only triggers to poll again. The contents of the
+		// request are completely ignored.
+		_, err := c.stream.Recv()
+		if err == io.EOF {
+			return
+		}
+		if err != nil {
+			log.Error(err)
+			c.errC <- err
+			return
+		}
+		log.Infof("polling subscription: repoll: %q", c.sr)
+		s.processSubscription(c)
+		log.Infof("polling subscription: repoll complete: %q", c.sr)
+	}
+}
+
+// sendStreamingResults forwards all streaming updates to a given streaming
+// Subscription RPC client.
+func (s *Service) sendStreamingResults(c *streamClient) {
+	ctx := c.stream.Context()
+	peer, _ := peer.FromContext(ctx)
+	t := time.NewTimer(s.timeout)
+	// Make sure the timer doesn't expire waiting for a value to send, only
+	// waiting to send.
+	t.Stop()
+	done := make(chan struct{})
+	defer close(done)
+	// If a send doesn't occur within the timeout, close the stream.
+	go func() {
+		select {
+		case <-t.C:
+			err := errors.New("subscription timed out while sending")
+			c.errC <- err
+			log.Errorf("%v : %v", peer, err)
+		case <-done:
+		}
+	}()
+	for {
+		item, dup, err := c.queue.Next(ctx)
+		if coalesce.IsClosedQueue(err) {
+			c.errC <- nil
+			return
+		}
+		if err != nil {
+			c.errC <- err
+			return
+		}
+
+		// s.processSubscription will send a sync marker, handle it separately.
+		if _, ok := item.(syncMarker); ok {
+			if err = c.stream.Send(subscribeSync); err != nil {
+				break
+			}
+			continue
+		}
+
+		n, ok := item.(*ctree.Leaf)
+		if !ok || n == nil {
+			c.errC <- status.Errorf(codes.Internal, "invalid cache node: %#v", item)
+			return
+		}
+		if err = s.sendSubscribeResponse(&resp{
+			stream: c.stream,
+			n:      n,
+			dup:    dup,
+			t:      t,
+		}); err != nil {
+			c.errC <- err
+			return
+		}
+		// If the only target being subscribed was deleted, stop streaming.
+		if cache.IsTargetDelete(n) && c.target != "*" {
+			log.Infof("Target %q was deleted. Closing stream.", c.target)
+			c.errC <- nil
+			return
+		}
+	}
+}
+
+// MakeSubscribeResponse produces a gnmi_proto.SubscribeResponse from either
+// client.Notification or gnmi_proto.Notification
+//
+// This function modifies the message to set the duplicate count if it is
+// greater than 0. The funciton clones the gnmi notification if the duplicate count needs to be set.
+// You have to be working on a cloned message if you need to modify the message in any way.
+func MakeSubscribeResponse(n interface{}, dup uint32) (*pb.SubscribeResponse, error) {
+	var notification *pb.Notification
+	switch cache.Type {
+	case cache.GnmiNoti:
+		var ok bool
+		notification, ok = n.(*pb.Notification)
+		if !ok {
+			return nil, status.Errorf(codes.Internal, "invalid notification type: %#v", n)
+		}
+
+		// There may be multiple updates in a notification. Since duplicate count is just
+		// an indicator that coalescion is happening, not a critical data, just the first
+		// update is set with duplicate count to be on the side of efficiency.
+		// Only attempt to set the duplicate count if it is greater than 0. The default
+		// value in the message is already 0.
+		if dup > 0 && len(notification.Update) > 0 {
+			// We need a copy of the cached notification before writing a client specific
+			// duplicate count as the notification is shared across all clients.
+			notification = proto.Clone(notification).(*pb.Notification)
+			notification.Update[0].Duplicates = dup
+		}
+	case cache.ClientLeaf:
+		notification = &pb.Notification{}
+		switch v := n.(type) {
+		case client.Delete:
+			notification.Delete = []*pb.Path{{Element: v.Path}}
+			notification.Timestamp = v.TS.UnixNano()
+		case client.Update:
+			typedVal, err := value.FromScalar(v.Val)
+			if err != nil {
+				return nil, err
+			}
+			notification.Update = []*pb.Update{{Path: &pb.Path{Element: v.Path}, Val: typedVal, Duplicates: dup}}
+			notification.Timestamp = v.TS.UnixNano()
+		}
+	}
+	response := &pb.SubscribeResponse{
+		Response: &pb.SubscribeResponse_Update{
+			Update: notification,
+		},
+	}
+
+	return response, nil
 }

@@ -154,6 +154,9 @@ docker-compose up -d --force-recreate --build target
 docker logs target
 
 ./build_all.sh && docker-compose up -d --force-recreate --build target && docker logs target -f
+
+export CONTAINER_ID_CLIENT=`docker ps -aqf 'name=client'`
+docker exec -i -t $CONTAINER_ID_CLIENT bash
 ```
 
 ### Test Client
@@ -167,6 +170,14 @@ gnmi_get -target_addr target:10161 -key certs/client.key -cert certs/client.crt 
 gnmi_get -target_addr target:10161 -key certs/client.key -cert certs/client.crt -ca certs/ca.crt -target_name target.gnxi.lan -alsologtostderr \
   -xpath "/system/openflow/agent/config/datapath-id" \
   -xpath "/system/openflow/controllers/controller[name=main]/connections/connection[aux-id=0]/config/address"
+  
+  
+  
+gnmi_get -target_addr target:10161 -key certs/client.key -cert certs/client.crt -ca certs/ca.crt -target_name target.gnxi.lan -alsologtostderr -xpath "/system/config/hostname"
+gnmi_get -target_addr target:10161 -key certs/client.key -cert certs/client.crt -ca certs/ca.crt -target_name target.gnxi.lan -alsologtostderr -xpath "/system/openflow/controllers/controller[name=dcc3a4a4-851b-4c65-a9dd-9e13561eb220]/connections/connection[aux-id=0]/config/address"
+gnmi_get -target_addr target:10161 -key certs/client.key -cert certs/client.crt -ca certs/ca.crt -target_name target.gnxi.lan -alsologtostderr -xpath "/components/component[name=os]"
+gnmi_get -target_addr target:10161 -key certs/client.key -cert certs/client.crt -ca certs/ca.crt -target_name target.gnxi.lan -alsologtostderr -xpath "/interfaces/interface[name=sw1-eth1]/state/counters/in-pkts"
+
 ```
 
 ### Generate Go Bindings for Open vSwitch

@@ -1,13 +1,10 @@
-package gnxi
+package gnmi
 
 import (
 	"github.com/openconfig/ygot/ygot"
 	oc "ovs-gnxi/generated/ocstruct"
-	"ovs-gnxi/target/logging"
 	"ovs-gnxi/target/ovs"
 )
-
-var log = logging.New("ovs-gnxi")
 
 func GenerateConfig(config *ovs.Config) ([]byte, error) {
 	log.Info("Start generating initial gNMI config from OVS system source...")

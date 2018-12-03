@@ -5,14 +5,11 @@ import (
 	"ovs-gnxi/target/gnxi"
 	"ovs-gnxi/target/gnxi/gnmi"
 	"ovs-gnxi/target/ovs"
-	"sync"
 )
 
 type SystemBroker struct {
-	OVSClient      *ovs.Client
-	OVSConfigLock  sync.RWMutex
-	GNMIServer     *gnmi.Server
-	GNMIConfigLock sync.RWMutex
+	OVSClient  *ovs.Client
+	GNXIServer *gnxi.Server
 }
 
 func NewSystemBroker() *SystemBroker {
@@ -22,12 +19,12 @@ func NewSystemBroker() *SystemBroker {
 
 func (s *SystemBroker) OVSConfigChangeCallback(ovsConfig *ovs.Config) error {
 	log.Debug("Received new change by OVS device")
-	gnmiConfig, err := gnxi.GenerateConfig(ovsConfig)
+	gnmiConfig, err := gnmi.GenerateConfig(ovsConfig)
 	if err != nil {
 		log.Errorf("Unable to generate gNMI config from OVS config source: %v", err)
 		return err
 	}
-	s.GNMIServer.OverwriteConfig(gnmiConfig)
+	s.GNXIServer.ServiceGNMI.OverwriteConfig(gnmiConfig)
 
 	return nil
 }

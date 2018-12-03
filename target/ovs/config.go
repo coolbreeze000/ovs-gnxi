@@ -178,7 +178,7 @@ func (c *Config) UpdateObjectCacheEntry(tableName, uuid string, row libovsdb.Row
 
 		c.ObjectCache.Interfaces[uuid] = &Interface{
 			uuid:        uuid,
-			Name:        uuid,
+			Name:        row.Fields["name"].(string),
 			MTU:         mtu,
 			AdminStatus: row.Fields["admin_state"].(string),
 			LinkStatus:  row.Fields["link_state"].(string),

@@ -16,6 +16,7 @@ import (
 	"ovs-gnxi/generated/ocstruct"
 	"ovs-gnxi/target/gnxi"
 	"ovs-gnxi/target/gnxi/gnmi"
+	"ovs-gnxi/target/gnxi/gnoi"
 	"ovs-gnxi/target/logging"
 	"ovs-gnxi/target/ovs"
 	"reflect"
@@ -65,7 +66,7 @@ func setGNMIServerFlags() {
 	flag.Parse()
 }
 
-func CreateGNMIServer(client *ovs.Client, broker *SystemBroker) *gnmi.Server {
+func CreateGNMIService(client *ovs.Client) *gnmi.Service {
 	<-client.Config.Initialized
 
 	setGNMIServerFlags()
@@ -76,28 +77,37 @@ func CreateGNMIServer(client *ovs.Client, broker *SystemBroker) *gnmi.Server {
 		ocstruct.Unmarshal,
 		ocstruct.ΛEnum)
 
-	config, err := gnxi.GenerateConfig(client.Config)
+	config, err := gnmi.GenerateConfig(client.Config)
 	if err != nil {
 		log.Fatalf("Unable to generate gNMI Config: %v", err)
 	}
 
 	log.Info(fmt.Sprintf("%s", config))
 
-	s, err := gnmi.NewServer(model, []byte(config), nil)
+	s, err := gnmi.NewService(model, []byte(config), nil, 8)
 	if err != nil {
-		log.Fatalf("Error on creating gNMI target: %v", err)
+		log.Fatalf("Error on creating gNMI service: %v", err)
 	}
 
 	return s
 }
 
-func RunGNMIServer(wg *sync.WaitGroup, server *gnmi.Server) {
+func CreateGNOIService() *gnoi.Service {
+	s, err := gnoi.NewService(nil, nil)
+	if err != nil {
+		log.Fatalf("Error on creating gNOI service: %v", err)
+	}
+
+	return s
+}
+
+func RunGNMIService(wg *sync.WaitGroup, service *gnmi.Service) {
 	defer wg.Done()
 
 	opts := credentials.ServerCredentials()
 	g := grpc.NewServer(opts...)
 
-	pb.RegisterGNMIServer(g, server)
+	pb.RegisterGNMIServer(g, service)
 	reflection.Register(g)
 
 	log.Infof("Starting to listen")
@@ -141,14 +151,15 @@ func main() {
 
 	go RunOVSClient(&wg, client)
 
-	gnmiServer := CreateGNMIServer(client, broker)
+	gnmiService := CreateGNMIService(client)
+	gnoiService := CreateGNOIService()
 
-	go RunGNMIServer(&wg, gnmiServer)
+	go RunGNMIService(&wg, gnmiService)
 
-	broker.GNMIServer = gnmiServer
+	broker.GNXIServer = gnxi.NewServer(gnmiService, gnoiService)
 	broker.OVSClient = client
 
-	gnmiServer.OverwriteCallback(broker.GNMIConfigChangeCallback)
+	gnmiService.OverwriteCallback(broker.GNMIConfigChangeCallback)
 	ovsConfig.OverwriteCallback(broker.OVSConfigChangeCallback)
 
 	wg.Wait()
