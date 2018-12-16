@@ -9,6 +9,7 @@ Vagrant.configure("2") do |config|
   # Every Vagrant development environment requires a box. You can search for
   # boxes at https://vagrantcloud.com/search.
   config.vm.box = "ubuntu/bionic64"
+  config.disksize.size = '20GB'
 
   # Network Settings
   config.vm.network "private_network", type: "dhcp"

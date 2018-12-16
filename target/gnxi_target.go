@@ -1,10 +1,25 @@
+/* Copyright 2018 Google Inc.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    https://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 package main
 
 import (
 	"flag"
 	"fmt"
-	"github.com/google/gnxi/gnmi/modeldata"
 	"github.com/google/gnxi/utils/credentials"
+	"github.com/openconfig/gnmi/cache"
 	pb "github.com/openconfig/gnmi/proto/gnmi"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -13,11 +28,12 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"ovs-gnxi/generated/ocstruct"
+	"ovs-gnxi/shared/logging"
 	"ovs-gnxi/target/gnxi"
 	"ovs-gnxi/target/gnxi/gnmi"
+	"ovs-gnxi/target/gnxi/gnmi/modeldata"
+	"ovs-gnxi/target/gnxi/gnmi/modeldata/generated/ocstruct"
 	"ovs-gnxi/target/gnxi/gnoi"
-	"ovs-gnxi/target/logging"
 	"ovs-gnxi/target/ovs"
 	"reflect"
 	"sync"
@@ -62,6 +78,14 @@ func setGNMIServerFlags() {
 	if err != nil {
 		log.Fatalf("Unable to set key flag: %v", err)
 	}
+	err = flag.Set("username", "admin")
+	if err != nil {
+		log.Fatalf("Unable to set username flag: %v", err)
+	}
+	err = flag.Set("password", "testpassword")
+	if err != nil {
+		log.Fatalf("Unable to set password flag: %v", err)
+	}
 
 	flag.Parse()
 }
@@ -84,7 +108,7 @@ func CreateGNMIService(client *ovs.Client) *gnmi.Service {
 
 	log.Info(fmt.Sprintf("%s", config))
 
-	s, err := gnmi.NewService(model, []byte(config), nil, 8)
+	s, err := gnmi.NewService(model, []byte(config), nil, cache.New([]string{"*"}), 8)
 	if err != nil {
 		log.Fatalf("Error on creating gNMI service: %v", err)
 	}

@@ -1,4 +1,4 @@
-/* Copyright 2017 Google Inc.
+/* Copyright 2018 Google Inc.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -30,7 +30,7 @@ import (
 	"google.golang.org/grpc/peer"
 	"io"
 	"io/ioutil"
-	"ovs-gnxi/target/logging"
+	"ovs-gnxi/shared/logging"
 	"reflect"
 	"strconv"
 	"sync"
@@ -40,8 +40,6 @@ import (
 	"golang.org/x/net/context"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-
-	"errors"
 
 	"github.com/golang/protobuf/proto"
 	"github.com/openconfig/gnmi/value"
@@ -70,8 +68,8 @@ type Service struct {
 	config   ygot.ValidatedGoStruct
 	mu       sync.RWMutex // mu is the RW lock to protect the access to config
 
-	c *cache.Cache // The cache queries are performed against.
-	m *match.Match // Structure to match updates against active subscriptions.
+	cache *cache.Cache // The cache queries are performed against.
+	m     *match.Match // Structure to match updates against active subscriptions.
 	// subscribeSlots is a channel of size SubscriptionLimit to restrict how many
 	// queries are in flight.
 	subscribeSlots chan struct{}
@@ -79,7 +77,7 @@ type Service struct {
 }
 
 // NewService creates an instance of Service with given json config.
-func NewService(model *Model, config []byte, callback ConfigCallback, subscriptionLimit int) (*Service, error) {
+func NewService(model *Model, config []byte, callback ConfigCallback, cache *cache.Cache, subscriptionLimit int) (*Service, error) {
 	rootStruct, err := model.NewConfigStruct(config)
 
 	if err != nil {
@@ -89,7 +87,12 @@ func NewService(model *Model, config []byte, callback ConfigCallback, subscripti
 		model:    model,
 		config:   rootStruct,
 		callback: callback,
+		cache:    cache,
 	}
+
+	s.cache.SetClient(func(l *ctree.Leaf) {
+		log.Error(l.Value())
+	})
 
 	if subscriptionLimit > 0 {
 		s.subscribeSlots = make(chan struct{}, subscriptionLimit)
@@ -678,6 +681,124 @@ func (s *Service) Update(n *ctree.Leaf) {
 	}
 }
 
+type streamClient struct {
+	target string
+	sr     *pb.SubscribeRequest
+	queue  *coalesce.Queue
+	stream pb.GNMI_SubscribeServer
+	errC   chan<- error
+}
+
+// Subscribe implements the Subscribe RPC in gNMI spec.
+func (s *Service) Subscribe(stream pb.GNMI_SubscribeServer) error {
+	c := streamClient{stream: stream}
+	var err error
+	c.sr, err = stream.Recv()
+
+	switch {
+	case err == io.EOF:
+		return nil
+	case err != nil:
+		return err
+	case c.sr.GetSubscribe() == nil:
+		return status.Errorf(codes.InvalidArgument, "request must contain a subscription %#v", c.sr)
+	case c.sr.GetSubscribe().GetPrefix() == nil:
+		return status.Errorf(codes.InvalidArgument, "request must contain a prefix %#v", c.sr)
+	case c.sr.GetSubscribe().GetPrefix().GetTarget() == "":
+		return status.Error(codes.InvalidArgument, "missing target")
+	}
+
+	c.target = c.sr.GetSubscribe().GetPrefix().GetTarget()
+	if !s.cache.HasTarget(c.target) {
+		return status.Errorf(codes.NotFound, "no such target: %q", c.target)
+	}
+	peer, _ := peer.FromContext(stream.Context())
+	mode := c.sr.GetSubscribe().Mode
+
+	log.Infof("peer: %v target: %q subscription: %s", peer.Addr, c.target, c.sr)
+	defer log.Infof("peer: %v target %q subscription: end: %q", peer.Addr, c.target, c.sr)
+
+	c.queue = coalesce.NewQueue()
+	defer c.queue.Close()
+
+	// This error channel is buffered to accept errors from all goroutines spawned
+	// for this RPC. Only the first is ever read and returned causing the RPC to
+	// terminate.
+	errC := make(chan error, 3)
+	c.errC = errC
+
+	switch mode {
+	case pb.SubscriptionList_ONCE:
+		go func() {
+			s.processSubscription(&c)
+			c.queue.Close()
+		}()
+	case pb.SubscriptionList_POLL:
+		go func() {
+			log.Info("SUBSCRIPTION POLL")
+		}()
+	case pb.SubscriptionList_STREAM:
+		go func() {
+			log.Info("SUBSCRIPTION STREAM")
+		}()
+	default:
+		return status.Errorf(codes.InvalidArgument, "Subscription mode %v not recognized", mode)
+	}
+
+	return <-errC
+}
+
+type syncMarker struct{}
+
+// processSubscription walks the cache tree and inserts all of the matching
+// nodes into the coalesce queue followed by a subscriptionSync response.
+func (s *Service) processSubscription(c *streamClient) {
+	var err error
+	// Close the cache client queue on error.
+	defer func() {
+		if err != nil {
+			log.Error(err)
+			c.queue.Close()
+			c.errC <- err
+		}
+	}()
+	if s.subscribeSlots != nil {
+		select {
+		// Register a subscription in the channel, which will block if SubscriptionLimit queries
+		// are already in flight.
+		case s.subscribeSlots <- struct{}{}:
+		default:
+			log.Infof("subscription %s delayed waiting for 1 of %d subscription slots.", c.sr, len(s.subscribeSlots))
+			s.subscribeSlots <- struct{}{}
+			log.Infof("subscription %s resumed", c.sr)
+		}
+		// Remove subscription from the channel upon completion.
+		defer func() {
+			<-s.subscribeSlots
+		}()
+	}
+	if !c.sr.GetSubscribe().GetUpdatesOnly() {
+		// remove the target name from the index string
+		prefix := path.ToStrings(c.sr.GetSubscribe().Prefix, true)[1:]
+		for _, subscription := range c.sr.GetSubscribe().Subscription {
+			path := append(prefix, path.ToStrings(subscription.Path, false)...)
+			s.cache.Query(c.target, path, func(_ []string, l *ctree.Leaf, _ interface{}) {
+				// Stop processing query results on error.
+				if err != nil {
+					return
+				}
+				_, err = c.queue.Insert(l)
+			})
+			if err != nil {
+				return
+			}
+		}
+	}
+
+	_, err = c.queue.Insert(syncMarker{})
+}
+
+/*
 // addSubscription registers all subscriptions for this client for update matching.
 func addSubscription(m *match.Match, s *pb.SubscriptionList, c *matchClient) (remove func()) {
 	var removes []func()
@@ -695,19 +816,11 @@ func addSubscription(m *match.Match, s *pb.SubscriptionList, c *matchClient) (re
 			remove()
 		}
 	}
-}
+}*/
 
-// Subscribe is the entry point for the external RPC request of the same name
-// defined in gnmi.proto.
+/*
+// Subscribe implements the Subscribe RPC in gNMI spec.
 func (s *Service) Subscribe(stream pb.GNMI_SubscribeServer) error {
-	/*
-		msg, ok := credentials.AuthorizeUser(ctx)
-		if !ok {
-			log.Infof("denied a Get request: %v", msg)
-			return status.Error(codes.PermissionDenied, msg)
-		}
-		log.Infof("allowed a Get request: %v", msg)
-	*/
 
 	c := streamClient{stream: stream}
 	var err error
@@ -727,7 +840,8 @@ func (s *Service) Subscribe(stream pb.GNMI_SubscribeServer) error {
 	}
 
 	c.target = c.sr.GetSubscribe().GetPrefix().GetTarget()
-	if !s.c.HasTarget(c.target) {
+	log.Error(c.sr.GetSubscribe())
+	if !s.cache.HasTarget(c.target) {
 		return status.Errorf(codes.NotFound, "no such target: %q", c.target)
 	}
 	peer, _ := peer.FromContext(stream.Context())
@@ -740,7 +854,7 @@ func (s *Service) Subscribe(stream pb.GNMI_SubscribeServer) error {
 	defer c.queue.Close()
 
 	// This error channel is buffered to accept errors from all goroutines spawned
-	// for this RPC.  Only the first is ever read and returned causing the RPC to
+	// for this RPC. Only the first is ever read and returned causing the RPC to
 	// terminate.
 	errC := make(chan error, 3)
 	c.errC = errC
@@ -787,6 +901,8 @@ type resp struct {
 // initial walk of the results as well as streamed updates and use a queue to
 // ensure order.
 func (s *Service) sendSubscribeResponse(r *resp) error {
+	log.Error("TEEEEEEEST222222222!")
+
 	notification, err := MakeSubscribeResponse(r.n.Value(), r.dup)
 	if err != nil {
 		return status.Errorf(codes.Unknown, err.Error())
@@ -860,7 +976,7 @@ func (s *Service) processSubscription(c *streamClient) {
 		prefix := path.ToStrings(c.sr.GetSubscribe().Prefix, true)[1:]
 		for _, subscription := range c.sr.GetSubscribe().Subscription {
 			path := append(prefix, path.ToStrings(subscription.Path, false)...)
-			s.c.Query(c.target, path, func(_ []string, l *ctree.Leaf, _ interface{}) {
+			s.cache.Query(c.target, path, func(_ []string, l *ctree.Leaf, _ interface{}) {
 				// Stop processing query results on error.
 				if err != nil {
 					return
@@ -907,6 +1023,9 @@ func (s *Service) sendStreamingResults(c *streamClient) {
 	ctx := c.stream.Context()
 	peer, _ := peer.FromContext(ctx)
 	t := time.NewTimer(s.timeout)
+
+	log.Error("TEEEEEEEST1111111111!")
+
 	// Make sure the timer doesn't expire waiting for a value to send, only
 	// waiting to send.
 	t.Stop()
@@ -923,6 +1042,8 @@ func (s *Service) sendStreamingResults(c *streamClient) {
 		}
 	}()
 	for {
+		log.Error("TEEEEEEEST999999999!")
+
 		item, dup, err := c.queue.Next(ctx)
 		if coalesce.IsClosedQueue(err) {
 			c.errC <- nil
@@ -940,6 +1061,8 @@ func (s *Service) sendStreamingResults(c *streamClient) {
 			}
 			continue
 		}
+
+		log.Error("TEEEEEEEST8888888888!")
 
 		n, ok := item.(*ctree.Leaf)
 		if !ok || n == nil {
@@ -1012,5 +1135,8 @@ func MakeSubscribeResponse(n interface{}, dup uint32) (*pb.SubscribeResponse, er
 		},
 	}
 
+	log.Error(response)
+
 	return response, nil
 }
+*/
