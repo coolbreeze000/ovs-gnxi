@@ -153,6 +153,7 @@ cd go/src/ovs-gnxi/scripts
 docker-compose up -d --force-recreate --build target
 docker logs target
 
+./build_all.sh && docker-compose up -d --force-recreate --build && docker logs target -f
 ./build_target.sh && docker-compose up -d --force-recreate --build target && docker logs target -f
 ./build_client.sh && docker-compose up -d --force-recreate --build client
 
@@ -166,7 +167,7 @@ GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o gnxi_client
 docker-compose up -d --force-recreate --build client
 
 ./gnxi_client
-./gnxi_client --method Subscribe
+./gnxi_client --method Subscribe --subscribe_xpath "/system/config/hostname"
 
 gnmi_get -target_addr target:10161 -key certs/client.key -cert certs/client.crt -ca certs/ca.crt -target_name target.gnxi.lan -alsologtostderr \
   -xpath "/system/openflow/controllers/controller[name=e2cab5f5-c683-4e97-804c-cf39a61c9967]/connections/connection[aux-id=0]/config/address"

@@ -17,13 +17,11 @@ package gnmi
 
 import (
 	"bytes"
-	"crypto/tls"
 	"fmt"
 	"github.com/go-errors/errors"
 	"github.com/golang/protobuf/proto"
 	"github.com/google/gnxi/utils/credentials"
 	"github.com/google/gnxi/utils/xpath"
-	"github.com/openconfig/gnmi/client"
 	"google.golang.org/grpc"
 	"io/ioutil"
 	"ovs-gnxi/shared/logging"
@@ -240,18 +238,6 @@ func (c *Client) Set(deleteXPaths, replaceXPaths, updateXPaths []string) (*pb.Se
 	return response, nil
 }
 
-func getType(t client.Type) pb.SubscriptionList_Mode {
-	switch t {
-	case client.Once:
-		return pb.SubscriptionList_ONCE
-	case client.Stream:
-		return pb.SubscriptionList_STREAM
-	case client.Poll:
-		return pb.SubscriptionList_POLL
-	}
-	return pb.SubscriptionList_ONCE
-}
-
 func (c *Client) Subscribe(subscribeXPaths []string, subscribeMode string) (*pb.SubscribeResponse, error) {
 	opts := credentials.ClientCredentials(c.targetName)
 	conn, err := grpc.Dial(c.targetAddress, opts...)
@@ -260,29 +246,45 @@ func (c *Client) Subscribe(subscribeXPaths []string, subscribeMode string) (*pb.
 	}
 	defer conn.Close()
 
-	var subscribeType client.Type
+	var subscribeType pb.SubscriptionList_Mode
 
 	switch subscribeMode {
 	case "Stream":
-		subscribeType = client.Stream
+		subscribeType = pb.SubscriptionList_STREAM
 	case "Poll":
-		subscribeType = client.Poll
+		subscribeType = pb.SubscriptionList_POLL
 	default:
-		subscribeType = client.Once
+		subscribeType = pb.SubscriptionList_ONCE
 	}
 
-	query := &client.Query{
-		Target:  "*",
-		Type:    subscribeType,
-		Queries: []client.Path{subscribeXPaths},
-		TLS:     &tls.Config{},
+	encoding, ok := pb.Encoding_value[c.encodingName]
+	if !ok {
+		var gnmiEncodingList []string
+		for _, name := range pb.Encoding_name {
+			gnmiEncodingList = append(gnmiEncodingList, name)
+		}
+		return nil, errors.New(fmt.Sprintf("Supported encodings: %s", strings.Join(gnmiEncodingList, ", ")))
+	}
+
+	var pbModelDataList []*pb.ModelData
+	var subscriptions []*pb.Subscription
+
+	for _, xPath := range subscribeXPaths {
+		pbPath, err := xpath.ToGNMIPath(xPath)
+		if err != nil {
+			return nil, errors.New(fmt.Sprintf("error in parsing xpath %q to gnmi path", xPath))
+		}
+		subscriptions = append(subscriptions, &pb.Subscription{Path: pbPath})
 	}
 
 	request := &pb.SubscribeRequest{
 		Request: &pb.SubscribeRequest_Subscribe{
 			Subscribe: &pb.SubscriptionList{
-				Mode:   getType(query.Type),
-				Prefix: &pb.Path{Target: query.Target},
+				Prefix:       &pb.Path{Target: c.targetName},
+				Mode:         subscribeType,
+				UseModels:    pbModelDataList,
+				Subscription: subscriptions,
+				Encoding:     pb.Encoding(encoding),
 			},
 		},
 	}

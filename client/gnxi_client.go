@@ -52,6 +52,12 @@ var (
 )
 
 func setGNMIClientFlags() {
+	flag.Var(&getXPaths, "get_xpath", "The gNMI Get XPaths to query for")
+	flag.Var(&deleteXPaths, "set_delete_xpath", "The gNMI Set Delete XPaths to query for")
+	flag.Var(&replaceXPaths, "set_replace_xpath", "The gNMI Set Replace XPaths to query for")
+	flag.Var(&updateXPaths, "set_update_xpath", "The gNMI Set Update XPaths to query for")
+	flag.Var(&subscribeXPaths, "subscribe_xpath", "The gNMI Subscribe XPaths to query for")
+
 	err := flag.Set("ca", "certs/ca.crt")
 	if err != nil {
 		log.Fatalf("Unable to set ca flag: %v", err)
@@ -112,6 +118,7 @@ func main() {
 		log.Debug("== Response:")
 		utils.PrintProto(resp)
 	case "Subscribe":
+		log.Info(subscribeXPaths)
 		resp, err := gnmiClient.Subscribe(subscribeXPaths, *subscribeMode)
 		if err != nil {
 			log.Fatal(err)
