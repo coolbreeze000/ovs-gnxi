@@ -13,23 +13,40 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package main
+package gnxi
 
 import (
 	"github.com/openconfig/ygot/ygot"
-	"ovs-gnxi/target/gnxi"
+	"os"
 	"ovs-gnxi/target/gnxi/gnmi"
 	"ovs-gnxi/target/ovs"
+	"sync"
+)
+
+const (
+	ovsAddress  = "ovs.gnxi.lan"
+	ovsProtocol = "tcp"
+	ovsPort     = "6640"
 )
 
 type SystemBroker struct {
+	GNXIServer *Server
 	OVSClient  *ovs.Client
-	GNXIServer *gnxi.Server
 }
 
-func NewSystemBroker() *SystemBroker {
-	b := SystemBroker{}
-	return &b
+func NewSystemBroker(gNXIServer *Server) *SystemBroker {
+	var err error
+	s := &SystemBroker{GNXIServer: gNXIServer}
+
+	log.Info("Initializing OVS Client...")
+
+	s.OVSClient, err = ovs.NewClient(ovsAddress, ovsProtocol, ovsPort, s.GNXIServer.certs.keySystemPath, s.GNXIServer.certs.certSystemPath, s.GNXIServer.certs.caSystemPath, ovs.NewConfig(s.OVSConfigChangeCallback))
+	if err != nil {
+		log.Errorf("Unable to initialize OVS Client: %v", err)
+		os.Exit(1)
+	}
+
+	return s
 }
 
 func (s *SystemBroker) OVSConfigChangeCallback(ovsConfig *ovs.Config) error {
@@ -46,4 +63,15 @@ func (s *SystemBroker) OVSConfigChangeCallback(ovsConfig *ovs.Config) error {
 
 func (s *SystemBroker) GNMIConfigChangeCallback(config ygot.ValidatedGoStruct) error {
 	return nil
+}
+
+func (s *SystemBroker) GNOICertificateChangeCallback(certs *ServerCertificates) error {
+	return nil
+}
+
+func (s *SystemBroker) RunOVSClient(wg *sync.WaitGroup) {
+	defer s.OVSClient.Connection.Disconnect()
+	defer wg.Done()
+	s.OVSClient.StartMonitorAll()
+	log.Error("OVS Client exit")
 }

@@ -107,7 +107,7 @@ func (c *Client) Get(getXPaths []string) (*pb.GetResponse, error) {
 	for _, xPath := range getXPaths {
 		pbPath, err := xpath.ToGNMIPath(xPath)
 		if err != nil {
-			return nil, errors.New(fmt.Sprintf("error in parsing xpath %q to gnmi path", xPath))
+			return nil, errors.New(fmt.Sprintf("error in parsing xpath %q to gnxi path", xPath))
 		}
 		pbPathList = append(pbPathList, pbPath)
 	}
@@ -139,7 +139,7 @@ func buildPbUpdateList(pathValuePairs []string) ([]*pb.Update, error) {
 		pathValuePair := []string{item[:splitIndex], item[(splitIndex + 1):]}
 		pbPath, err := xpath.ToGNMIPath(pathValuePair[0])
 		if err != nil {
-			return nil, errors.New(fmt.Sprintf("error in parsing xpath %q to gnmi path", pathValuePair[0]))
+			return nil, errors.New(fmt.Sprintf("error in parsing xpath %q to gnxi path", pathValuePair[0]))
 		}
 		var pbVal *pb.TypedValue
 		if pathValuePair[1][0] == '@' {
@@ -207,7 +207,7 @@ func (c *Client) Set(deleteXPaths, replaceXPaths, updateXPaths []string) (*pb.Se
 	for _, xPath := range deleteXPaths {
 		pbPath, err := xpath.ToGNMIPath(xPath)
 		if err != nil {
-			return nil, errors.New(fmt.Sprintf("error in parsing xpath %q to gnmi path", xPath))
+			return nil, errors.New(fmt.Sprintf("error in parsing xpath %q to gnxi path", xPath))
 		}
 		deleteList = append(deleteList, pbPath)
 	}
@@ -272,7 +272,7 @@ func (c *Client) Subscribe(subscribeXPaths []string, subscribeMode string) (*pb.
 	for _, xPath := range subscribeXPaths {
 		pbPath, err := xpath.ToGNMIPath(xPath)
 		if err != nil {
-			return nil, errors.New(fmt.Sprintf("error in parsing xpath %q to gnmi path", xPath))
+			return nil, errors.New(fmt.Sprintf("error in parsing xpath %q to gnxi path", xPath))
 		}
 		subscriptions = append(subscriptions, &pb.Subscription{Path: pbPath})
 	}

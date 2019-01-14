@@ -13,30 +13,27 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// Package gnmi implements a gnmi server.
+// Package gnxi implements a gnxi server.
 package gnmi
 
 import (
 	"bytes"
 	"compress/gzip"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"fmt"
-	"github.com/google/gnxi/utils/credentials"
-	"github.com/openconfig/gnmi/cache"
-	"github.com/openconfig/gnmi/client"
-	"github.com/openconfig/gnmi/coalesce"
-	"github.com/openconfig/gnmi/ctree"
-	"github.com/openconfig/gnmi/path"
-	"google.golang.org/grpc/peer"
-	"io"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/reflection"
 	"io/ioutil"
 	"ovs-gnxi/shared/logging"
+	"ovs-gnxi/target/gnxi"
 	"reflect"
 	"strconv"
 	"sync"
 	"time"
 
-	"github.com/openconfig/gnmi/match"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -61,41 +58,29 @@ var log = logging.New("ovs-gnxi")
 // ConfigCallback is the signature of the function to apply a validated config to the physical device.
 type ConfigCallback func(ygot.ValidatedGoStruct) error
 
-// Service struct maintains the data structure for device config and implements the gnmi interface. It supports Capabilities, Get, Set and Subscribe APIs.
+// Service struct maintains the data structure for device config and implements the gnxi interface. It supports Capabilities, Get, Set and Subscribe APIs.
 type Service struct {
+	server   *gnxi.Server
 	model    *Model
 	callback ConfigCallback
 	config   ygot.ValidatedGoStruct
 	mu       sync.RWMutex // mu is the RW lock to protect the access to config
 
-	cache *cache.Cache // The cache queries are performed against.
-	m     *match.Match // Structure to match updates against active subscriptions.
-	// subscribeSlots is a channel of size SubscriptionLimit to restrict how many
-	// queries are in flight.
-	subscribeSlots chan struct{}
-	timeout        time.Duration
+	timeout time.Duration
 }
 
 // NewService creates an instance of Service with given json config.
-func NewService(model *Model, config []byte, callback ConfigCallback, cache *cache.Cache, subscriptionLimit int) (*Service, error) {
+func NewService(server *gnxi.Server, model *Model, config []byte, callback ConfigCallback) (*Service, error) {
 	rootStruct, err := model.NewConfigStruct(config)
 
 	if err != nil {
 		return nil, err
 	}
 	s := &Service{
+		server:   server,
 		model:    model,
 		config:   rootStruct,
 		callback: callback,
-		cache:    cache,
-	}
-
-	s.cache.SetClient(func(l *ctree.Leaf) {
-		log.Error(l.Value())
-	})
-
-	if subscriptionLimit > 0 {
-		s.subscribeSlots = make(chan struct{}, subscriptionLimit)
 	}
 
 	if config != nil && s.callback != nil {
@@ -447,9 +432,16 @@ func setPathWithoutAttribute(op pb.UpdateResult_Operation, curNode map[string]in
 
 // Capabilities returns supported encodings and supported models.
 func (s *Service) Capabilities(ctx context.Context, req *pb.CapabilityRequest) (*pb.CapabilityResponse, error) {
+	authorized, err := s.auth.AuthorizeUser(ctx)
+	if !authorized {
+		log.Infof("denied a Capabilities request: %v", err)
+		return nil, status.Error(codes.PermissionDenied, fmt.Sprint(err))
+	}
+	log.Infof("allowed a Capabilities request: %v")
+
 	ver, err := getGNMIServiceVersion()
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "error in getting gnmi service version: %v", err)
+		return nil, status.Errorf(codes.Internal, "error in getting gnxi service version: %v", err)
 	}
 	return &pb.CapabilityResponse{
 		SupportedModels:    s.model.modelData,
@@ -460,12 +452,12 @@ func (s *Service) Capabilities(ctx context.Context, req *pb.CapabilityRequest) (
 
 // Get implements the Get RPC in gNMI spec and provides user auth.
 func (s *Service) Get(ctx context.Context, req *pb.GetRequest) (*pb.GetResponse, error) {
-	msg, ok := credentials.AuthorizeUser(ctx)
-	if !ok {
-		log.Infof("denied a Get request: %v", msg)
-		return nil, status.Error(codes.PermissionDenied, msg)
+	authorized, err := s.auth.AuthorizeUser(ctx)
+	if !authorized {
+		log.Infof("denied a Get request: %v", err)
+		return nil, status.Error(codes.PermissionDenied, fmt.Sprint(err))
 	}
-	log.Infof("allowed a Get request: %v", msg)
+	log.Infof("allowed a Get request: %v")
 
 	if req.GetType() != pb.GetRequest_ALL {
 		return nil, status.Errorf(codes.Unimplemented, "unsupported request type: %s", pb.GetRequest_DataType_name[int32(req.GetType())])
@@ -579,12 +571,12 @@ func (s *Service) Get(ctx context.Context, req *pb.GetRequest) (*pb.GetResponse,
 
 // Set implements the Set RPC in gNMI spec and provides user auth.
 func (s *Service) Set(ctx context.Context, req *pb.SetRequest) (*pb.SetResponse, error) {
-	msg, ok := credentials.AuthorizeUser(ctx)
-	if !ok {
-		log.Infof("denied a Set request: %v", msg)
-		return nil, status.Error(codes.PermissionDenied, msg)
+	authorized, err := s.auth.AuthorizeUser(ctx)
+	if !authorized {
+		log.Infof("denied a Set request: %v", err)
+		return nil, status.Error(codes.PermissionDenied, fmt.Sprint(err))
 	}
-	log.Infof("allowed a Set request: %v", msg)
+	log.Infof("allowed a Set request: %v")
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -659,122 +651,28 @@ func (s *Service) OverwriteCallback(callback ConfigCallback) {
 	s.callback = callback
 }
 
-// Update passes a streaming update to registered clients.
-func (s *Service) Update(n *ctree.Leaf) {
-	switch v := n.Value().(type) {
-	case client.Delete:
-		s.m.Update(n, v.Path)
-	case client.Update:
-		s.m.Update(n, v.Path)
-	case *pb.Notification:
-		p := path.ToStrings(v.Prefix, true)
-		if len(v.Update) > 0 {
-			p = append(p, path.ToStrings(v.Update[0].Path, false)...)
-		} else if len(v.Delete) > 0 {
-			p = append(p, path.ToStrings(v.Delete[0], false)...)
-		}
-		// If neither update nor delete notification exists,
-		// just go with the path in the prefix
-		s.m.Update(n, p)
-	default:
-		log.Errorf("update is not a known type; type is %T", v)
-	}
-}
-
-type streamClient struct {
-	target string
-	sr     *pb.SubscribeRequest
-	queue  *coalesce.Queue
-	stream pb.GNMI_SubscribeServer
-	errC   chan<- error
-}
-
-// Subscribe implements the Subscribe RPC in gNMI spec.
 func (s *Service) Subscribe(stream pb.GNMI_SubscribeServer) error {
-	c := streamClient{stream: stream}
-	var err error
-	c.sr, err = stream.Recv()
-
-	switch {
-	case err == io.EOF:
-		return nil
-	case err != nil:
-		return err
-	case c.sr.GetSubscribe() == nil:
-		return status.Errorf(codes.InvalidArgument, "request must contain a subscription %#v", c.sr)
+	authorized, err := s.auth.AuthorizeUser(stream.Context())
+	if !authorized {
+		log.Infof("denied a Subscribe request: %v", err)
+		return status.Error(codes.PermissionDenied, fmt.Sprint(err))
 	}
+	log.Infof("allowed a Subscribe request: %v")
 
-	peer, _ := peer.FromContext(stream.Context())
-	mode := c.sr.GetSubscribe().Mode
-
-	log.Infof("peer: %v target: %q subscription: %s", peer.Addr, c.target, c.sr)
-	defer log.Infof("peer: %v target %q subscription: end: %q", peer.Addr, c.target, c.sr)
-
-	c.queue = coalesce.NewQueue()
-	defer c.queue.Close()
-
-	// This error channel is buffered to accept errors from all goroutines spawned
-	// for this RPC. Only the first is ever read and returned causing the RPC to
-	// terminate.
-	errC := make(chan error, 3)
-	c.errC = errC
-
-	switch mode {
-	case pb.SubscriptionList_ONCE:
-		go func() {
-			s.processSubscription(&c)
-			c.queue.Close()
-		}()
-	case pb.SubscriptionList_POLL:
-		go func() {
-			log.Info("SUBSCRIPTION POLL")
-		}()
-	case pb.SubscriptionList_STREAM:
-		go func() {
-			log.Info("SUBSCRIPTION STREAM")
-		}()
-	default:
-		return status.Errorf(codes.InvalidArgument, "Subscription mode %v not recognized", mode)
-	}
-
-	return <-errC
+	return nil
 }
 
-// processSubscription walks the cache tree and inserts all of the matching
-// nodes into the coalesce queue followed by a subscriptionSync response.
-func (s *Service) processSubscription(c *streamClient) {
-	var err error
-	// Close the cache client queue on error.
-	defer func() {
-		if err != nil {
-			log.Error(err)
-			c.queue.Close()
-			c.errC <- err
-		}
-	}()
-	if s.subscribeSlots != nil {
-		select {
-		// Register a subscription in the channel, which will block if SubscriptionLimit queries
-		// are already in flight.
-		case s.subscribeSlots <- struct{}{}:
-		default:
-			log.Infof("subscription %s delayed waiting for 1 of %d subscription slots.", c.sr, len(s.subscribeSlots))
-			s.subscribeSlots <- struct{}{}
-			log.Infof("subscription %s resumed", c.sr)
-		}
-		// Remove subscription from the channel upon completion.
-		defer func() {
-			<-s.subscribeSlots
-		}()
-	}
-	if !c.sr.GetSubscribe().GetUpdatesOnly() {
-		log.Info(c.sr.GetSubscribe().Prefix)
-		// remove the target name from the index string
-		prefix := path.ToStrings(c.sr.GetSubscribe().Prefix, true)[1:]
-		log.Info(prefix)
-		for _, subscription := range c.sr.GetSubscribe().Subscription {
-			path := append(prefix, path.ToStrings(subscription.Path, false)...)
-			log.Info(path)
-		}
-	}
+func (s *Service) PrepareServer(certificates []tls.Certificate, certPool *x509.CertPool) (*grpc.Server, error) {
+	opts := []grpc.ServerOption{grpc.Creds(credentials.NewTLS(&tls.Config{
+		ClientAuth:   tls.RequireAndVerifyClientCert,
+		Certificates: certificates,
+		ClientCAs:    certPool,
+	}))}
+
+	return grpc.NewServer(opts...), nil
+}
+
+func (s *Service) RegisterService(g *grpc.Server) {
+	pb.RegisterGNMIServer(g, s)
+	reflection.Register(g)
 }

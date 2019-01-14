@@ -18,15 +18,12 @@ package gnoi
 
 import (
 	"crypto"
-	"crypto/rand"
-	"crypto/rsa"
 	"crypto/tls"
-	"fmt"
-
+	"crypto/x509"
 	"github.com/google/gnxi/gnoi/cert"
-	"github.com/google/gnxi/utils/entity"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
+	"ovs-gnxi/target/gnxi"
 )
 
 const (
@@ -34,65 +31,34 @@ const (
 )
 
 type Service struct {
+	server             *gnxi.Server
 	certServer         *cert.Server
 	certManager        *cert.Manager
 	defaultCertificate *tls.Certificate
 }
 
-func NewService(privateKey crypto.PrivateKey, defaultCertificate *tls.Certificate) (*Service, error) {
-	if defaultCertificate == nil {
-		if privateKey == nil {
-			var err error
-			privateKey, err = rsa.GenerateKey(rand.Reader, RSABitSize)
-			if err != nil {
-				return nil, fmt.Errorf("failed to generate private key: %v", err)
-			}
-		}
-		e, err := entity.CreateSelfSigned("gNOI server", privateKey)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create self signed certificate: %v", err)
-		}
-		defaultCertificate = e.Certificate
-	}
-
+func NewService(server *gnxi.Server, privateKey crypto.PrivateKey, defaultCertificate *tls.Certificate) (*Service, error) {
 	certManager := cert.NewManager(defaultCertificate.PrivateKey)
 	certServer := cert.NewServer(certManager)
 	return &Service{
+		server:             server,
 		certServer:         certServer,
 		certManager:        certManager,
 		defaultCertificate: defaultCertificate,
 	}, nil
 }
 
-// PrepareEncrypted prepares a gRPC server with the CertificateManagement service
-// running with encryption but without authentication.
-func (s *Service) PrepareEncrypted() *grpc.Server {
-
+func (s *Service) PrepareServer(certificates []tls.Certificate, certPool *x509.CertPool) (*grpc.Server, error) {
 	opts := []grpc.ServerOption{grpc.Creds(credentials.NewTLS(&tls.Config{
-		ClientAuth:   tls.RequireAnyClientCert,
-		Certificates: []tls.Certificate{*s.defaultCertificate},
-		ClientCAs:    nil,
+		ClientAuth:   tls.RequireAndVerifyClientCert,
+		Certificates: certificates,
+		ClientCAs:    certPool,
 	}))}
-	return grpc.NewServer(opts...)
+
+	return grpc.NewServer(opts...), nil
 }
 
-// PrepareAuthenticated prepares a gRPC server with the CertificateManagement service
-// running with full encryption and authentication.
-func (s *Service) PrepareAuthenticated() *grpc.Server {
-	config := func(*tls.ClientHelloInfo) (*tls.Config, error) {
-		tlsCerts, x509Pool := s.certManager.TLSCertificates()
-		return &tls.Config{
-			ClientAuth:   tls.RequireAndVerifyClientCert,
-			Certificates: tlsCerts,
-			ClientCAs:    x509Pool,
-		}, nil
-	}
-	opts := []grpc.ServerOption{grpc.Creds(credentials.NewTLS(&tls.Config{GetConfigForClient: config}))}
-	return grpc.NewServer(opts...)
-}
-
-// RegCertificateManagement registers the Certificate Management service in the gRPC Server.
-func (s *Service) RegCertificateManagement(g *grpc.Server) {
+func (s *Service) RegisterService(g *grpc.Server) {
 	s.certServer.Register(g)
 }
 
