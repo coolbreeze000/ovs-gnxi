@@ -30,11 +30,14 @@ const (
 	RSABitSize = 4096
 )
 
+type CertificateCallback func(gnxi.ServerCertificates) error
+
 type Service struct {
 	server             *gnxi.Server
 	certServer         *cert.Server
 	certManager        *cert.Manager
 	defaultCertificate *tls.Certificate
+	callback           CertificateCallback
 }
 
 func NewService(server *gnxi.Server, privateKey crypto.PrivateKey, defaultCertificate *tls.Certificate) (*Service, error) {

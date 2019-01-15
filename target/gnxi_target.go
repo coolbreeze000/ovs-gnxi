@@ -58,6 +58,8 @@ func main() {
 
 	go gNXIServer.SystemBroker.RunOVSClient(&wg)
 
+	gNXIServer.InitializeServices()
+
 	go gNXIServer.RunGNMIService(&wg)
 
 	go gNXIServer.RunGNOIService(&wg)

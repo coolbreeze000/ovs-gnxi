@@ -432,7 +432,7 @@ func setPathWithoutAttribute(op pb.UpdateResult_Operation, curNode map[string]in
 
 // Capabilities returns supported encodings and supported models.
 func (s *Service) Capabilities(ctx context.Context, req *pb.CapabilityRequest) (*pb.CapabilityResponse, error) {
-	authorized, err := s.auth.AuthorizeUser(ctx)
+	authorized, err := s.server.Auth.AuthorizeUser(ctx)
 	if !authorized {
 		log.Infof("denied a Capabilities request: %v", err)
 		return nil, status.Error(codes.PermissionDenied, fmt.Sprint(err))
@@ -452,7 +452,7 @@ func (s *Service) Capabilities(ctx context.Context, req *pb.CapabilityRequest) (
 
 // Get implements the Get RPC in gNMI spec and provides user auth.
 func (s *Service) Get(ctx context.Context, req *pb.GetRequest) (*pb.GetResponse, error) {
-	authorized, err := s.auth.AuthorizeUser(ctx)
+	authorized, err := s.server.Auth.AuthorizeUser(ctx)
 	if !authorized {
 		log.Infof("denied a Get request: %v", err)
 		return nil, status.Error(codes.PermissionDenied, fmt.Sprint(err))
@@ -571,7 +571,7 @@ func (s *Service) Get(ctx context.Context, req *pb.GetRequest) (*pb.GetResponse,
 
 // Set implements the Set RPC in gNMI spec and provides user auth.
 func (s *Service) Set(ctx context.Context, req *pb.SetRequest) (*pb.SetResponse, error) {
-	authorized, err := s.auth.AuthorizeUser(ctx)
+	authorized, err := s.server.Auth.AuthorizeUser(ctx)
 	if !authorized {
 		log.Infof("denied a Set request: %v", err)
 		return nil, status.Error(codes.PermissionDenied, fmt.Sprint(err))
@@ -652,7 +652,7 @@ func (s *Service) OverwriteCallback(callback ConfigCallback) {
 }
 
 func (s *Service) Subscribe(stream pb.GNMI_SubscribeServer) error {
-	authorized, err := s.auth.AuthorizeUser(stream.Context())
+	authorized, err := s.server.Auth.AuthorizeUser(stream.Context())
 	if !authorized {
 		log.Infof("denied a Subscribe request: %v", err)
 		return status.Error(codes.PermissionDenied, fmt.Sprint(err))

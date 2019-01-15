@@ -40,7 +40,7 @@ func NewSystemBroker(gNXIServer *Server) *SystemBroker {
 
 	log.Info("Initializing OVS Client...")
 
-	s.OVSClient, err = ovs.NewClient(ovsAddress, ovsProtocol, ovsPort, s.GNXIServer.certs.keySystemPath, s.GNXIServer.certs.certSystemPath, s.GNXIServer.certs.caSystemPath, ovs.NewConfig(s.OVSConfigChangeCallback))
+	s.OVSClient, err = ovs.NewClient(ovsAddress, ovsProtocol, ovsPort, s.GNXIServer.Certs.KeySystemPath, s.GNXIServer.Certs.CertSystemPath, s.GNXIServer.Certs.CASystemPath, ovs.NewConfig(nil))
 	if err != nil {
 		log.Errorf("Unable to initialize OVS Client: %v", err)
 		os.Exit(1)
