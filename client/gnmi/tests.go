@@ -54,6 +54,17 @@ var GetTests = []struct {
 	ExpResp:   "ovs.gnxi.lan",
 }}
 
+var SubscribeTests = []struct {
+	Desc      string
+	XPaths    []string
+	Extractor func(n []*gnmi.Notification) string
+	ExpResp   interface{}
+}{{
+	Desc:      "get interface state counters in-pkts",
+	XPaths:    []string{"/interfaces/interface[name=sw1-eth1]/state/counters/in-pkts"},
+	Extractor: ExtractSingleStringValueFromResponse,
+}}
+
 func ExtractSingleStringValueFromResponse(n []*gnmi.Notification) string {
 	return n[0].Update[0].Val.GetStringVal()
 }

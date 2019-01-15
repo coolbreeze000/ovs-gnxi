@@ -13,15 +13,46 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package gnmi
+package ovs
 
 import (
 	"github.com/openconfig/ygot/ygot"
+	"os"
+	"ovs-gnxi/shared"
+	"ovs-gnxi/target/gnxi/gnmi"
 	oc "ovs-gnxi/target/gnxi/gnmi/modeldata/generated/ocstruct"
-	"ovs-gnxi/target/ovs"
+	"ovs-gnxi/target/gnxi/gnoi"
+	"sync"
 )
 
-func GenerateConfig(config *ovs.Config) ([]byte, error) {
+const (
+	ovsAddress  = "ovs.gnxi.lan"
+	ovsProtocol = "tcp"
+	ovsPort     = "6640"
+)
+
+type SystemBroker struct {
+	gnmiService *gnmi.Service
+	gnoiService *gnoi.Service
+	OVSClient   *Client
+}
+
+func NewSystemBroker(gnmiService *gnmi.Service, gnoiService *gnoi.Service, certs *shared.ServerCertificates) *SystemBroker {
+	var err error
+	s := &SystemBroker{gnmiService: gnmiService, gnoiService: gnoiService}
+
+	log.Info("Initializing OVS Client...")
+
+	s.OVSClient, err = NewClient(ovsAddress, ovsProtocol, ovsPort, certs.KeySystemPath, certs.CertSystemPath, certs.CASystemPath, NewConfig(nil))
+	if err != nil {
+		log.Errorf("Unable to initialize OVS Client: %v", err)
+		os.Exit(1)
+	}
+
+	return s
+}
+
+func (s *SystemBroker) GenerateConfig(config *Config) ([]byte, error) {
 	log.Info("Start generating initial gNMI config from OVS system source...")
 	log.Debugf("Using following initial config data: %v", config.ObjectCache)
 
@@ -32,15 +63,15 @@ func GenerateConfig(config *ovs.Config) ([]byte, error) {
 		},
 	}
 
-	s, err := d.NewComponent("os")
+	v, err := d.NewComponent("os")
 	if err != nil {
 		return []byte(""), err
 	}
 
-	s.Type = &oc.Component_Type_Union_E_OpenconfigPlatformTypes_OPENCONFIG_SOFTWARE_COMPONENT{
+	v.Type = &oc.Component_Type_Union_E_OpenconfigPlatformTypes_OPENCONFIG_SOFTWARE_COMPONENT{
 		E_OpenconfigPlatformTypes_OPENCONFIG_SOFTWARE_COMPONENT: oc.OpenconfigPlatformTypes_OPENCONFIG_SOFTWARE_COMPONENT_OPERATING_SYSTEM,
 	}
-	s.Description = ygot.String(config.ObjectCache.System.Version)
+	v.Description = ygot.String(config.ObjectCache.System.Version)
 
 	for _, i := range config.ObjectCache.Interfaces {
 		o, err := d.NewInterface(i.Name)
@@ -105,4 +136,34 @@ func GenerateConfig(config *ovs.Config) ([]byte, error) {
 	}
 
 	return []byte(j), nil
+}
+
+func (s *SystemBroker) OVSConfigChangeCallback(ovsConfig *Config) error {
+	log.Debug("Received new change by OVS device")
+	gnmiConfig, err := s.GenerateConfig(ovsConfig)
+	if err != nil {
+		log.Errorf("Unable to generate gNMI config from OVS config source: %v", err)
+		return err
+	}
+
+	if s.gnmiService != nil {
+		s.gnmiService.OverwriteConfig(gnmiConfig)
+	}
+
+	return nil
+}
+
+func (s *SystemBroker) GNMIConfigChangeCallback(config ygot.ValidatedGoStruct) error {
+	return nil
+}
+
+func (s *SystemBroker) GNOICertificateChangeCallback(certs *shared.ServerCertificates) error {
+	return nil
+}
+
+func (s *SystemBroker) RunOVSClient(wg *sync.WaitGroup) {
+	defer s.OVSClient.Connection.Disconnect()
+	defer wg.Done()
+	s.OVSClient.StartMonitorAll()
+	log.Error("OVS Client exit")
 }

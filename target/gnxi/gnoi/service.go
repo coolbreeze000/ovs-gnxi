@@ -17,37 +17,33 @@ limitations under the License.
 package gnoi
 
 import (
-	"crypto"
 	"crypto/tls"
 	"crypto/x509"
 	"github.com/google/gnxi/gnoi/cert"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
-	"ovs-gnxi/target/gnxi"
+	"ovs-gnxi/shared"
 )
 
-const (
-	RSABitSize = 4096
-)
-
-type CertificateCallback func(gnxi.ServerCertificates) error
+type CertificateCallback func(certificates *shared.ServerCertificates) error
 
 type Service struct {
-	server             *gnxi.Server
+	auth               *shared.Authenticator
 	certServer         *cert.Server
 	certManager        *cert.Manager
 	defaultCertificate *tls.Certificate
 	callback           CertificateCallback
 }
 
-func NewService(server *gnxi.Server, privateKey crypto.PrivateKey, defaultCertificate *tls.Certificate) (*Service, error) {
+func NewService(auth *shared.Authenticator, defaultCertificate *tls.Certificate, callback CertificateCallback) (*Service, error) {
 	certManager := cert.NewManager(defaultCertificate.PrivateKey)
 	certServer := cert.NewServer(certManager)
 	return &Service{
-		server:             server,
+		auth:               auth,
 		certServer:         certServer,
 		certManager:        certManager,
 		defaultCertificate: defaultCertificate,
+		callback:           callback,
 	}, nil
 }
 

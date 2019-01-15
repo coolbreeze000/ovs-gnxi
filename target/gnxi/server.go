@@ -18,15 +18,13 @@ package gnxi
 
 import (
 	"crypto/tls"
-	"crypto/x509"
-	"errors"
 	"fmt"
-	"io/ioutil"
 	"net"
-	"ovs-gnxi/shared/gnxi"
+	"ovs-gnxi/shared"
 	"ovs-gnxi/shared/logging"
 	"ovs-gnxi/target/gnxi/gnmi"
 	"ovs-gnxi/target/gnxi/gnmi/modeldata/generated/ocstruct"
+	"ovs-gnxi/target/ovs"
 	"sync"
 
 	"ovs-gnxi/target/gnxi/gnmi/modeldata"
@@ -49,11 +47,11 @@ var log = logging.New("ovs-gnxi")
 
 // Server struct maintains the data structure for device config and implements the interface of gnxi server. It supports Capabilities, Get, and Set APIs.
 type Server struct {
-	Auth              *gnxi.Authenticator
-	Certs             *ServerCertificates
-	SystemBroker      *SystemBroker
-	ServiceGNMI       *gnmi.Service
-	ServiceGNOI       *gnoi.Service
+	Auth              *shared.Authenticator
+	certs             *shared.ServerCertificates
+	SystemBroker      *ovs.SystemBroker
+	serviceGNMI       *gnmi.Service
+	serviceGNOI       *gnoi.Service
 	certificateChange chan struct{}
 }
 
@@ -61,66 +59,26 @@ type Server struct {
 func NewServer() (*Server, error) {
 	log.Info("Initializing gNXI Server...")
 
-	auth := &gnxi.Authenticator{}
-	adminUser := gnxi.NewUser(adminUsername, adminPassword)
-	auth.AddUser(adminUser)
+	auth := shared.NewAuthenticator(adminUsername, adminPassword)
 
-	certs, err := NewServerCertificates(caPATH, certPATH, keyPATH)
+	certs, err := shared.NewServerCertificates(caPATH, certPATH, keyPATH)
 	if err != nil {
 		return nil, err
 	}
 
-	s := &Server{Auth: auth, Certs: certs}
-	s.SystemBroker = NewSystemBroker(s)
+	log.Info("TEST3")
+
+	s := &Server{Auth: auth, certs: certs}
+	s.SystemBroker = ovs.NewSystemBroker(s.serviceGNMI, s.serviceGNOI, s.certs)
+
+	log.Info("TEST4")
 
 	return s, nil
 }
 
 func (s *Server) InitializeServices() {
-	s.ServiceGNMI = s.createGNMIService()
-	s.ServiceGNOI = s.CreateGNOIService()
-}
-
-type ServerCertificates struct {
-	CASystemPath   string
-	CertSystemPath string
-	KeySystemPath  string
-	Certificate    tls.Certificate
-	CACertificates []*x509.Certificate
-	CertPool       *x509.CertPool
-}
-
-// LoadCertificates loads certificates from file.
-func NewServerCertificates(ca, cert, key string) (*ServerCertificates, error) {
-	certificate, err := tls.LoadX509KeyPair(cert, key)
-	if err != nil {
-		return nil, errors.New(fmt.Sprintf("could not load target key pair: %s", err))
-	}
-
-	certPool := x509.NewCertPool()
-
-	caFile, err := ioutil.ReadFile(ca)
-	if err != nil {
-		return nil, errors.New(fmt.Sprintf("could not read CA certificate: %s", err))
-	}
-
-	caCertificate, err := x509.ParseCertificates([]byte(caFile))
-	if err != nil {
-		panic("failed to parse certificate: " + err.Error())
-	}
-
-	if ok := certPool.AppendCertsFromPEM(caFile); !ok {
-		return nil, errors.New("failed to append CA certificate")
-	}
-
-	return &ServerCertificates{
-			CASystemPath:   ca,
-			CertSystemPath: cert,
-			KeySystemPath:  key,
-			Certificate:    certificate,
-			CACertificates: caCertificate,
-			CertPool:       certPool},
-		nil
+	s.serviceGNMI = s.createGNMIService()
+	s.serviceGNOI = s.CreateGNOIService()
 }
 
 func (s *Server) createGNMIService() *gnmi.Service {
@@ -132,7 +90,7 @@ func (s *Server) createGNMIService() *gnmi.Service {
 		ocstruct.Unmarshal,
 		ocstruct.ΛEnum)
 
-	config, err := gnmi.GenerateConfig(s.SystemBroker.OVSClient.Config)
+	config, err := s.SystemBroker.GenerateConfig(s.SystemBroker.OVSClient.Config)
 	if err != nil {
 		log.Fatalf("Unable to generate gNMI Config: %v", err)
 	}
@@ -140,7 +98,7 @@ func (s *Server) createGNMIService() *gnmi.Service {
 	log.Info(fmt.Sprintf("%s", config))
 
 	s.SystemBroker.OVSClient.Config.OverwriteCallback(s.SystemBroker.OVSConfigChangeCallback)
-	c, err := gnmi.NewService(s, model, []byte(config), s.SystemBroker.GNMIConfigChangeCallback)
+	c, err := gnmi.NewService(s.Auth, model, []byte(config), s.SystemBroker.GNMIConfigChangeCallback)
 	if err != nil {
 		log.Fatalf("Error on creating gNMI service: %v", err)
 	}
@@ -149,7 +107,7 @@ func (s *Server) createGNMIService() *gnmi.Service {
 }
 
 func (s *Server) CreateGNOIService() *gnoi.Service {
-	c, err := gnoi.NewService(s, s.Certs.Certificate.PrivateKey, &s.Certs.Certificate, s.SystemBroker.GNOICertificateChangeCallback())
+	c, err := gnoi.NewService(s.Auth, &s.certs.Certificate, s.SystemBroker.GNOICertificateChangeCallback)
 	if err != nil {
 		log.Fatalf("Error on creating gNOI service: %v", err)
 	}
@@ -160,12 +118,12 @@ func (s *Server) CreateGNOIService() *gnoi.Service {
 func (s *Server) RunGNMIService(wg *sync.WaitGroup) {
 	defer wg.Done()
 
-	g, err := s.ServiceGNMI.PrepareServer([]tls.Certificate{s.Certs.Certificate}, s.Certs.CertPool)
+	g, err := s.serviceGNMI.PrepareServer([]tls.Certificate{s.certs.Certificate}, s.certs.CertPool)
 	if err != nil {
 		log.Fatalf("Failed to prepare gNMI server: %v", err)
 	}
 
-	s.ServiceGNMI.RegisterService(g)
+	s.serviceGNMI.RegisterService(g)
 
 	log.Infof("Starting to listen")
 	listen, err := net.Listen(gnxiProtocol, fmt.Sprintf(":%s", portGNMI))
@@ -184,12 +142,12 @@ func (s *Server) RunGNMIService(wg *sync.WaitGroup) {
 func (s *Server) RunGNOIService(wg *sync.WaitGroup) {
 	defer wg.Done()
 
-	g, err := s.ServiceGNOI.PrepareServer([]tls.Certificate{s.Certs.Certificate}, s.Certs.CertPool)
+	g, err := s.serviceGNOI.PrepareServer([]tls.Certificate{s.certs.Certificate}, s.certs.CertPool)
 	if err != nil {
 		log.Fatalf("Failed to prepare gNMI server: %v", err)
 	}
 
-	s.ServiceGNOI.RegisterService(g)
+	s.serviceGNOI.RegisterService(g)
 
 	log.Infof("Starting to listen")
 	listen, err := net.Listen(gnxiProtocol, fmt.Sprintf(":%s", portGNOI))

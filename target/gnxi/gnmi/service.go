@@ -26,9 +26,10 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/reflection"
+	"io"
 	"io/ioutil"
+	"ovs-gnxi/shared"
 	"ovs-gnxi/shared/logging"
-	"ovs-gnxi/target/gnxi"
 	"reflect"
 	"strconv"
 	"sync"
@@ -60,7 +61,7 @@ type ConfigCallback func(ygot.ValidatedGoStruct) error
 
 // Service struct maintains the data structure for device config and implements the gnxi interface. It supports Capabilities, Get, Set and Subscribe APIs.
 type Service struct {
-	server   *gnxi.Server
+	auth     *shared.Authenticator
 	model    *Model
 	callback ConfigCallback
 	config   ygot.ValidatedGoStruct
@@ -70,14 +71,14 @@ type Service struct {
 }
 
 // NewService creates an instance of Service with given json config.
-func NewService(server *gnxi.Server, model *Model, config []byte, callback ConfigCallback) (*Service, error) {
+func NewService(auth *shared.Authenticator, model *Model, config []byte, callback ConfigCallback) (*Service, error) {
 	rootStruct, err := model.NewConfigStruct(config)
 
 	if err != nil {
 		return nil, err
 	}
 	s := &Service{
-		server:   server,
+		auth:     auth,
 		model:    model,
 		config:   rootStruct,
 		callback: callback,
@@ -432,12 +433,12 @@ func setPathWithoutAttribute(op pb.UpdateResult_Operation, curNode map[string]in
 
 // Capabilities returns supported encodings and supported models.
 func (s *Service) Capabilities(ctx context.Context, req *pb.CapabilityRequest) (*pb.CapabilityResponse, error) {
-	authorized, err := s.server.Auth.AuthorizeUser(ctx)
+	authorized, err := s.auth.AuthorizeUser(ctx)
 	if !authorized {
 		log.Infof("denied a Capabilities request: %v", err)
 		return nil, status.Error(codes.PermissionDenied, fmt.Sprint(err))
 	}
-	log.Infof("allowed a Capabilities request: %v")
+	log.Infof("allowed a Capabilities request")
 
 	ver, err := getGNMIServiceVersion()
 	if err != nil {
@@ -452,12 +453,12 @@ func (s *Service) Capabilities(ctx context.Context, req *pb.CapabilityRequest) (
 
 // Get implements the Get RPC in gNMI spec and provides user auth.
 func (s *Service) Get(ctx context.Context, req *pb.GetRequest) (*pb.GetResponse, error) {
-	authorized, err := s.server.Auth.AuthorizeUser(ctx)
+	authorized, err := s.auth.AuthorizeUser(ctx)
 	if !authorized {
 		log.Infof("denied a Get request: %v", err)
 		return nil, status.Error(codes.PermissionDenied, fmt.Sprint(err))
 	}
-	log.Infof("allowed a Get request: %v")
+	log.Infof("allowed a Get request")
 
 	if req.GetType() != pb.GetRequest_ALL {
 		return nil, status.Errorf(codes.Unimplemented, "unsupported request type: %s", pb.GetRequest_DataType_name[int32(req.GetType())])
@@ -571,12 +572,12 @@ func (s *Service) Get(ctx context.Context, req *pb.GetRequest) (*pb.GetResponse,
 
 // Set implements the Set RPC in gNMI spec and provides user auth.
 func (s *Service) Set(ctx context.Context, req *pb.SetRequest) (*pb.SetResponse, error) {
-	authorized, err := s.server.Auth.AuthorizeUser(ctx)
+	authorized, err := s.auth.AuthorizeUser(ctx)
 	if !authorized {
 		log.Infof("denied a Set request: %v", err)
 		return nil, status.Error(codes.PermissionDenied, fmt.Sprint(err))
 	}
-	log.Infof("allowed a Set request: %v")
+	log.Infof("allowed a Set request")
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -652,12 +653,143 @@ func (s *Service) OverwriteCallback(callback ConfigCallback) {
 }
 
 func (s *Service) Subscribe(stream pb.GNMI_SubscribeServer) error {
-	authorized, err := s.server.Auth.AuthorizeUser(stream.Context())
+	authorized, err := s.auth.AuthorizeUser(stream.Context())
 	if !authorized {
 		log.Infof("denied a Subscribe request: %v", err)
 		return status.Error(codes.PermissionDenied, fmt.Sprint(err))
 	}
-	log.Infof("allowed a Subscribe request: %v")
+	log.Infof("allowed a Subscribe request")
+
+	req, err := stream.Recv()
+
+	log.Info(req)
+
+	switch {
+	case err == io.EOF:
+		return nil
+	case err != nil:
+		return err
+	case req.GetSubscribe() == nil:
+		return status.Errorf(codes.InvalidArgument, "request must contain a subscription %#v", req)
+	}
+
+	if req.GetSubscribe().Mode != pb.SubscriptionList_STREAM {
+		return status.Errorf(codes.Unimplemented, "unsupported subscribe mode: %s", req.GetSubscribe().Mode)
+	}
+
+	if err := s.checkEncodingAndModel(req.GetSubscribe().GetEncoding(), req.GetSubscribe().UseModels); err != nil {
+		return status.Error(codes.Unimplemented, err.Error())
+	}
+
+	prefix := req.GetSubscribe().GetPrefix()
+	paths := req.GetSubscribe().GetSubscription()
+	var notification *pb.Notification
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	for _, path := range paths {
+		// Get schema node for path from config struct.
+		fullPath := path.Path
+		if prefix != nil {
+			fullPath = gnmiFullPath(prefix, path.Path)
+		}
+		if fullPath.GetElem() == nil && fullPath.GetElement() != nil {
+			return status.Error(codes.Unimplemented, "deprecated path element type is unsupported")
+		}
+		node, stat := ygotutils.GetNode(s.model.schemaTreeRoot, s.config, fullPath)
+		if isNil(node) || stat.GetCode() != int32(cpb.Code_OK) {
+			return status.Errorf(codes.NotFound, "path %v not found", fullPath)
+		}
+
+		ts := time.Now().UnixNano()
+
+		nodeStruct, ok := node.(ygot.GoStruct)
+		// Return leaf node.
+		if !ok {
+			var val *pb.TypedValue
+			switch kind := reflect.ValueOf(node).Kind(); kind {
+			case reflect.Ptr, reflect.Interface:
+				var err error
+				val, err = value.FromScalar(reflect.ValueOf(node).Elem().Interface())
+				if err != nil {
+					msg := fmt.Sprintf("leaf node %v does not contain a scalar type value: %v", path, err)
+					log.Error(msg)
+					return status.Error(codes.Internal, msg)
+				}
+			case reflect.Int64:
+				enumMap, ok := s.model.enumData[reflect.TypeOf(node).Name()]
+				if !ok {
+					return status.Error(codes.Internal, "not a GoStruct enumeration type")
+				}
+				val = &pb.TypedValue{
+					Value: &pb.TypedValue_StringVal{
+						StringVal: enumMap[reflect.ValueOf(node).Int()].Name,
+					},
+				}
+			default:
+				return status.Errorf(codes.Internal, "unexpected kind of leaf node type: %v %v", node, kind)
+			}
+
+			update := &pb.Update{Path: path.Path, Val: val}
+			notification = &pb.Notification{
+				Timestamp: ts,
+				Prefix:    prefix,
+				Update:    []*pb.Update{update},
+			}
+			continue
+		}
+
+		// Return all leaf nodes of the sub-tree.
+		if len(req.GetSubscribe().UseModels) != len(s.model.modelData) && req.GetSubscribe().GetEncoding() != pb.Encoding_JSON_IETF {
+			results, err := ygot.TogNMINotifications(nodeStruct, ts, ygot.GNMINotificationsConfig{UsePathElem: true, PathElemPrefix: fullPath.Elem})
+			if err != nil {
+				return status.Errorf(codes.Internal, "error in serializing GoStruct to notifications: %v", err)
+			}
+			if len(results) != 1 {
+				return status.Errorf(codes.Internal, "ygot.TogNMINotifications() return %d notifications instead of one", len(results))
+			}
+			notification = results[0]
+			continue
+		}
+
+		// Return IETF JSON for the sub-tree.
+		jsonTree, err := ygot.ConstructIETFJSON(nodeStruct, &ygot.RFC7951JSONConfig{AppendModuleName: true})
+		if err != nil {
+			msg := fmt.Sprintf("error in constructing IETF JSON tree from requested node: %v", err)
+			log.Error(msg)
+			return status.Error(codes.Internal, msg)
+		}
+		jsonDump, err := json.Marshal(jsonTree)
+		if err != nil {
+			msg := fmt.Sprintf("error in marshaling IETF JSON tree to bytes: %v", err)
+			log.Error(msg)
+			return status.Error(codes.Internal, msg)
+		}
+		update := &pb.Update{
+			Path: path.Path,
+			Val: &pb.TypedValue{
+				Value: &pb.TypedValue_JsonIetfVal{
+					JsonIetfVal: jsonDump,
+				},
+			},
+		}
+		notification = &pb.Notification{
+			Timestamp: ts,
+			Prefix:    prefix,
+			Update:    []*pb.Update{update},
+		}
+	}
+
+	resp := &pb.SubscribeResponse{
+		Response: &pb.SubscribeResponse_Update{
+			Update: notification,
+		},
+	}
+	err = stream.Send(resp)
+	if err != nil {
+		return status.Error(codes.Unimplemented, err.Error())
+	}
 
 	return nil
 }

@@ -54,6 +54,8 @@ func main() {
 		os.Exit(1)
 	}
 
+	log.Info(gNXIServer)
+
 	go RunPrometheus(prometheusInstance)
 
 	go gNXIServer.SystemBroker.RunOVSClient(&wg)

@@ -19,6 +19,7 @@ import (
 	"flag"
 	"github.com/google/gnxi/utils"
 	"github.com/google/go-cmp/cmp"
+	pb "github.com/openconfig/gnmi/proto/gnmi"
 	"os"
 	"ovs-gnxi/client/gnmi"
 	"ovs-gnxi/shared/logging"
@@ -129,6 +130,7 @@ func main() {
 	default:
 		RunGNMICapabilitiesTests(gnmiClient)
 		RunGNMIGetTests(gnmiClient)
+		RunGNMISubscribeTests(gnmiClient)
 	}
 
 	log.Info("Finished Open vSwitch gNXI client tester\n")
@@ -208,6 +210,30 @@ func RunGNMIGetTests(c *gnmi.Client) {
 
 		if td.Extractor(resp.Notification) != td.ExpResp {
 			log.Errorf("Get(%v): expected %v, actual %v", td.XPaths, td.ExpResp, td.Extractor(resp.Notification))
+		}
+	}
+}
+
+func RunGNMISubscribeTests(c *gnmi.Client) {
+	for _, td := range gnmi.SubscribeTests {
+		log.Infof("Testing GNMI Subscribe(%v)...", td.XPaths)
+
+		resp, err := c.Subscribe(td.XPaths, "Stream")
+		if err != nil {
+			log.Fatal(err)
+			continue
+		}
+
+		update, ok := resp.GetResponse().(*pb.SubscribeResponse_Update)
+		if !ok {
+			log.Fatal(err)
+			continue
+		}
+
+		log.Infof("Successfully verified GNMI Subscribe(%v)", td.XPaths)
+
+		if td.Extractor([]*pb.Notification{update.Update}) != td.ExpResp {
+			log.Errorf("Subscribe(%v): expected %v, actual %v", td.XPaths, td.ExpResp, td.Extractor([]*pb.Notification{update.Update}))
 		}
 	}
 }

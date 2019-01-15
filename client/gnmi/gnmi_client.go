@@ -263,7 +263,7 @@ func (c *Client) Subscribe(subscribeXPaths []string, subscribeMode string) (*pb.
 		for _, name := range pb.Encoding_name {
 			gnmiEncodingList = append(gnmiEncodingList, name)
 		}
-		return nil, errors.New(fmt.Sprintf("Supported encodings: %s", strings.Join(gnmiEncodingList, ", ")))
+		return nil, fmt.Errorf("supported encodings: %s", strings.Join(gnmiEncodingList, ", "))
 	}
 
 	var pbModelDataList []*pb.ModelData
@@ -272,7 +272,7 @@ func (c *Client) Subscribe(subscribeXPaths []string, subscribeMode string) (*pb.
 	for _, xPath := range subscribeXPaths {
 		pbPath, err := xpath.ToGNMIPath(xPath)
 		if err != nil {
-			return nil, errors.New(fmt.Sprintf("error in parsing xpath %q to gnxi path", xPath))
+			return nil, fmt.Errorf("error in parsing xpath %q to gnxi path", xPath)
 		}
 		subscriptions = append(subscriptions, &pb.Subscription{Path: pbPath})
 	}
@@ -295,16 +295,16 @@ func (c *Client) Subscribe(subscribeXPaths []string, subscribeMode string) (*pb.
 	cli := pb.NewGNMIClient(conn)
 	subClient, err := cli.Subscribe(context.Background())
 	if err != nil {
-		return nil, errors.New(fmt.Sprintf("Subscribe failed: %v", err))
+		return nil, fmt.Errorf("subscribe failed: %v", err)
 	}
 
 	err = subClient.Send(request)
 	if err != nil {
-		return nil, errors.New(fmt.Sprintf("Subscribe send failed: %v", err))
+		return nil, fmt.Errorf("subscribe send failed: %v", err)
 	}
 	response, err := subClient.Recv()
 	if err != nil {
-		return nil, errors.New(fmt.Sprintf("Subscribe recv failed: %v", err))
+		return nil, fmt.Errorf("subscribe recv failed: %v", err)
 	}
 
 	return response, nil

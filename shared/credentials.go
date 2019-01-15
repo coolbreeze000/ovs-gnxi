@@ -14,7 +14,7 @@ limitations under the License.
 */
 
 // Package credentials loads certificates and validates user credentials.
-package gnxi
+package shared
 
 import (
 	"errors"
@@ -23,12 +23,26 @@ import (
 	"google.golang.org/grpc/metadata"
 )
 
-type Authenticator struct {
-	Users map[string]User
+type User struct {
+	username string
+	password string
 }
 
-func (a *Authenticator) AddUser(user *User) {
-	a.Users[user.username] = *user
+type Authenticator struct {
+	users map[string]User
+}
+
+func NewAuthenticator(adminUsername, adminPassword string) *Authenticator {
+	a := &Authenticator{users: make(map[string]User)}
+	a.AddUser(adminUsername, adminPassword)
+	return a
+}
+
+func (a *Authenticator) AddUser(username, password string) {
+	a.users[username] = User{
+		username: username,
+		password: password,
+	}
 }
 
 // AuthorizeUser checks for valid credentials in the context Metadata.
@@ -52,23 +66,11 @@ func (a *Authenticator) AuthorizeUser(ctx context.Context) (bool, error) {
 
 	password := p[0]
 
-	if _, ok := a.Users[username]; ok {
-		if password == a.Users[username].password && username == a.Users[username].username {
+	if _, ok := a.users[username]; ok {
+		if password == a.users[username].password && username == a.users[username].username {
 			return true, nil
 		}
 	}
 
 	return false, errors.New(fmt.Sprintf("not authorized with \"%s:%s\"", username, password))
-}
-
-type User struct {
-	username string
-	password string
-}
-
-func NewUser(username, password string) *User {
-	return &User{
-		username: username,
-		password: password,
-	}
 }
