@@ -32,14 +32,14 @@ const (
 )
 
 type SystemBroker struct {
-	gnmiService *gnmi.Service
-	gnoiService *gnoi.Service
+	ServiceGNMI *gnmi.Service
+	ServiceGNOI *gnoi.Service
 	OVSClient   *Client
 }
 
-func NewSystemBroker(gnmiService *gnmi.Service, gnoiService *gnoi.Service, certs *shared.ServerCertificates) *SystemBroker {
+func NewSystemBroker(serviceGNMI *gnmi.Service, ServiceGNOI *gnoi.Service, certs *shared.ServerCertificates) *SystemBroker {
 	var err error
-	s := &SystemBroker{gnmiService: gnmiService, gnoiService: gnoiService}
+	s := &SystemBroker{ServiceGNMI: serviceGNMI, ServiceGNOI: ServiceGNOI}
 
 	log.Info("Initializing OVS Client...")
 
@@ -53,9 +53,6 @@ func NewSystemBroker(gnmiService *gnmi.Service, gnoiService *gnoi.Service, certs
 }
 
 func (s *SystemBroker) GenerateConfig(config *Config) ([]byte, error) {
-	log.Info("Start generating initial gNMI config from OVS system source...")
-	log.Debugf("Using following initial config data: %v", config.ObjectCache)
-
 	d := &oc.Device{
 		System: &oc.System{
 			Hostname: ygot.String(config.ObjectCache.System.Hostname),
@@ -109,6 +106,7 @@ func (s *SystemBroker) GenerateConfig(config *Config) ([]byte, error) {
 		if err != nil {
 			return []byte(""), err
 		}
+
 		n, err := c.NewConnection(0)
 		n.Address = ygot.String(i.Target.Address)
 		n.Port = ygot.Uint16(i.Target.Port)
@@ -146,8 +144,9 @@ func (s *SystemBroker) OVSConfigChangeCallback(ovsConfig *Config) error {
 		return err
 	}
 
-	if s.gnmiService != nil {
-		s.gnmiService.OverwriteConfig(gnmiConfig)
+	if s.ServiceGNMI != nil {
+		s.ServiceGNMI.OverwriteConfig(gnmiConfig)
+		log.Debugf("Using following config data: %s", gnmiConfig)
 	}
 
 	return nil

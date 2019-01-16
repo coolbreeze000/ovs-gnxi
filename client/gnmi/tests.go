@@ -43,28 +43,75 @@ var CapabilitiesTests = []struct {
 }}
 
 var GetTests = []struct {
-	Desc      string
-	XPaths    []string
-	Extractor func(n []*gnmi.Notification) string
-	ExpResp   interface{}
-}{{
-	Desc:      "get system config hostname",
-	XPaths:    []string{"/system/config/hostname"},
-	Extractor: ExtractSingleStringValueFromResponse,
-	ExpResp:   "ovs.gnxi.lan",
-}}
+	Desc            string
+	XPaths          []string
+	ExtractorString func(n []*gnmi.Notification) string
+	ExpResp         interface{}
+	ExtractorUInt   func(n []*gnmi.Notification) uint64
+	MinResp         interface{}
+}{
+	{
+		Desc:            "get system config hostname",
+		XPaths:          []string{"/system/config/hostname"},
+		ExtractorString: ExtractSingleStringValueFromResponse,
+		ExpResp:         "ovs.gnxi.lan",
+	},
+	{
+		Desc:            "get platform component os state version",
+		XPaths:          []string{"/components/component[name=os]/state/description"},
+		ExtractorString: ExtractSingleStringValueFromResponse,
+		ExpResp:         "2.9.0",
+	},
+	{
+		Desc:            "get system openflow controller connection config address",
+		XPaths:          []string{"/system/openflow/controllers/controller[name=main]/connections/connection[aux-id=0]/config/address"},
+		ExtractorString: ExtractSingleStringValueFromResponse,
+		ExpResp:         "172.18.0.2",
+	},
+	{
+		Desc:          "get system openflow controller connection config port",
+		XPaths:        []string{"/system/openflow/controllers/controller[name=main]/connections/connection[aux-id=0]/config/port"},
+		ExtractorUInt: ExtractSingleUintValueFromResponse,
+		ExpResp:       uint64(6653),
+	},
+	{
+		Desc:          "get interface state counters in-pkts",
+		XPaths:        []string{"/interfaces/interface[name=sw1-eth1]/state/counters/in-pkts"},
+		ExtractorUInt: ExtractSingleUintValueFromResponse,
+		MinResp:       uint64(0),
+	},
+	{
+		Desc:          "get interface state counters out-pkts",
+		XPaths:        []string{"/interfaces/interface[name=sw1-eth1]/state/counters/out-pkts"},
+		ExtractorUInt: ExtractSingleUintValueFromResponse,
+		MinResp:       uint64(0),
+	},
+}
 
 var SubscribeTests = []struct {
-	Desc      string
-	XPaths    []string
-	Extractor func(n []*gnmi.Notification) string
-	ExpResp   interface{}
-}{{
-	Desc:      "get interface state counters in-pkts",
-	XPaths:    []string{"/interfaces/interface[name=sw1-eth1]/state/counters/in-pkts"},
-	Extractor: ExtractSingleStringValueFromResponse,
-}}
+	Desc          string
+	XPaths        []string
+	ExtractorUInt func(n []*gnmi.Notification) uint64
+	MinResp       interface{}
+}{
+	{
+		Desc:          "subscribe to interface state counters in-pkts",
+		XPaths:        []string{"/interfaces/interface[name=sw1-eth1]/state/counters/in-pkts"},
+		ExtractorUInt: ExtractSingleUintValueFromResponse,
+		MinResp:       uint64(0),
+	},
+	{
+		Desc:          "subscribe to interface state counters out-pkts",
+		XPaths:        []string{"/interfaces/interface[name=sw1-eth1]/state/counters/out-pkts"},
+		ExtractorUInt: ExtractSingleUintValueFromResponse,
+		MinResp:       uint64(0),
+	},
+}
 
 func ExtractSingleStringValueFromResponse(n []*gnmi.Notification) string {
 	return n[0].Update[0].Val.GetStringVal()
+}
+
+func ExtractSingleUintValueFromResponse(n []*gnmi.Notification) uint64 {
+	return n[0].Update[0].Val.GetUintVal()
 }

@@ -25,6 +25,10 @@ import (
 	"sync"
 )
 
+const (
+	primaryControllerName = "main"
+)
+
 type ConfigCallback func(config *Config) error
 
 type System struct {
@@ -173,9 +177,9 @@ func (c *Config) UpdateObjectCacheEntry(tableName, uuid string, row libovsdb.Row
 			return err
 		}
 
-		c.ObjectCache.Controllers[uuid] = &OpenFlowController{
+		c.ObjectCache.Controllers[primaryControllerName] = &OpenFlowController{
 			uuid:      uuid,
-			Name:      uuid,
+			Name:      primaryControllerName,
 			Connected: row.Fields["is_connected"].(bool),
 			Target:    target,
 		}

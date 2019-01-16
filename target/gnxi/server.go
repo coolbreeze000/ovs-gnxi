@@ -79,6 +79,8 @@ func NewServer() (*Server, error) {
 func (s *Server) InitializeServices() {
 	s.serviceGNMI = s.createGNMIService()
 	s.serviceGNOI = s.CreateGNOIService()
+	s.SystemBroker.ServiceGNMI = s.serviceGNMI
+	s.SystemBroker.ServiceGNOI = s.serviceGNOI
 }
 
 func (s *Server) createGNMIService() *gnmi.Service {
@@ -90,12 +92,14 @@ func (s *Server) createGNMIService() *gnmi.Service {
 		ocstruct.Unmarshal,
 		ocstruct.ΛEnum)
 
+	log.Info("Start generating initial gNMI config from OVS system source...")
+
 	config, err := s.SystemBroker.GenerateConfig(s.SystemBroker.OVSClient.Config)
 	if err != nil {
 		log.Fatalf("Unable to generate gNMI Config: %v", err)
 	}
 
-	log.Info(fmt.Sprintf("%s", config))
+	log.Debugf("Using following initial config data: %s", config)
 
 	s.SystemBroker.OVSClient.Config.OverwriteCallback(s.SystemBroker.OVSConfigChangeCallback)
 	c, err := gnmi.NewService(s.Auth, model, []byte(config), s.SystemBroker.GNMIConfigChangeCallback)

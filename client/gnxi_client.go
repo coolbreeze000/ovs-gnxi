@@ -206,11 +206,32 @@ func RunGNMIGetTests(c *gnmi.Client) {
 			continue
 		}
 
-		log.Infof("Successfully verified GNMI Get(%v)", td.XPaths)
+		if td.ExtractorString != nil {
+			actResp := td.ExtractorString(resp.Notification)
 
-		if td.Extractor(resp.Notification) != td.ExpResp {
-			log.Errorf("Get(%v): expected %v, actual %v", td.XPaths, td.ExpResp, td.Extractor(resp.Notification))
+			if actResp != td.ExpResp {
+				log.Errorf("Get(%v): expected %v, actual %v", td.XPaths, td.ExpResp, actResp)
+			} else {
+				log.Infof("Successfully verified GNMI Get(%v) with response value %v", td.XPaths, actResp)
+			}
+		} else if td.ExtractorUInt != nil {
+			actResp := td.ExtractorUInt(resp.Notification)
+
+			if td.ExpResp != nil {
+				if actResp != td.ExpResp.(uint64) {
+					log.Errorf("Get(%v): expected %v, actual %v", td.XPaths, td.ExpResp, actResp)
+				} else {
+					log.Infof("Successfully verified GNMI Get(%v) with response value %v", td.XPaths, actResp)
+				}
+			} else if td.MinResp != nil {
+				if actResp <= td.MinResp.(uint64) {
+					log.Errorf("Subscribe(%v): expected higher than %v, actual %v", td.XPaths, td.MinResp, actResp)
+				} else {
+					log.Infof("Successfully verified GNMI Subscribe(%v) with response value %v", td.XPaths, actResp)
+				}
+			}
 		}
+
 	}
 }
 
@@ -230,10 +251,16 @@ func RunGNMISubscribeTests(c *gnmi.Client) {
 			continue
 		}
 
-		log.Infof("Successfully verified GNMI Subscribe(%v)", td.XPaths)
+		log.Info(update)
 
-		if td.Extractor([]*pb.Notification{update.Update}) != td.ExpResp {
-			log.Errorf("Subscribe(%v): expected %v, actual %v", td.XPaths, td.ExpResp, td.Extractor([]*pb.Notification{update.Update}))
+		actResp := td.ExtractorUInt([]*pb.Notification{update.Update})
+
+		log.Info(actResp)
+
+		if actResp <= td.MinResp.(uint64) {
+			log.Errorf("Subscribe(%v): expected higher than %v, actual %v", td.XPaths, td.MinResp, td.ExtractorUInt([]*pb.Notification{update.Update}))
+		} else {
+			log.Infof("Successfully verified GNMI Subscribe(%v) with response value %v", td.XPaths, actResp)
 		}
 	}
 }

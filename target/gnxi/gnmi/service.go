@@ -89,6 +89,7 @@ func NewService(auth *shared.Authenticator, model *Model, config []byte, callbac
 			return nil, err
 		}
 	}
+
 	return s, nil
 }
 
@@ -444,11 +445,16 @@ func (s *Service) Capabilities(ctx context.Context, req *pb.CapabilityRequest) (
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "error in getting gnxi service version: %v", err)
 	}
-	return &pb.CapabilityResponse{
+
+	resp := &pb.CapabilityResponse{
 		SupportedModels:    s.model.modelData,
 		SupportedEncodings: supportedEncodings,
 		GNMIVersion:        *ver,
-	}, nil
+	}
+
+	log.Infof("Send Capability response to client: %v", resp)
+
+	return resp, nil
 }
 
 // Get implements the Get RPC in gNMI spec and provides user auth.
@@ -567,7 +573,11 @@ func (s *Service) Get(ctx context.Context, req *pb.GetRequest) (*pb.GetResponse,
 		}
 	}
 
-	return &pb.GetResponse{Notification: notifications}, nil
+	resp := &pb.GetResponse{Notification: notifications}
+
+	log.Infof("Send Get response to client: %v", resp)
+
+	return resp, nil
 }
 
 // Set implements the Set RPC in gNMI spec and provides user auth.
@@ -626,10 +636,15 @@ func (s *Service) Set(ctx context.Context, req *pb.SetRequest) (*pb.SetResponse,
 		log.Error(msg)
 	}
 	s.config = rootStruct
-	return &pb.SetResponse{
+
+	resp := &pb.SetResponse{
 		Prefix:   req.GetPrefix(),
 		Response: results,
-	}, nil
+	}
+
+	log.Infof("Send Set response to client: %v", resp)
+
+	return resp, nil
 }
 
 // Overwrites the internal gNMI config.
@@ -786,6 +801,9 @@ func (s *Service) Subscribe(stream pb.GNMI_SubscribeServer) error {
 			Update: notification,
 		},
 	}
+
+	log.Infof("Send Subscribe response to client: %v", resp)
+
 	err = stream.Send(resp)
 	if err != nil {
 		return status.Error(codes.Unimplemented, err.Error())
