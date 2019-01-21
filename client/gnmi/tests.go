@@ -88,7 +88,31 @@ var GetTests = []struct {
 	},
 }
 
-var SubscribeTests = []struct {
+var SetTests = []struct {
+	Desc            string
+	DeleteXPaths    []string
+	ReplaceXPaths   []string
+	UpdateXPaths    []string
+	ExtractorString func(n []*gnmi.Notification) string
+	ExpResp         interface{}
+	ExtractorUInt   func(n []*gnmi.Notification) uint64
+	MinResp         interface{}
+}{
+	{
+		Desc:            "set system openflow controller connection config address",
+		UpdateXPaths:    []string{"/system/openflow/controllers/controller[name=main]/connections/connection[aux-id=0]/config/address"},
+		ExtractorString: ExtractSingleStringValueFromResponse,
+		ExpResp:         "172.18.0.3",
+	},
+	{
+		Desc:          "set system openflow controller connection config port",
+		UpdateXPaths:  []string{"/system/openflow/controllers/controller[name=main]/connections/connection[aux-id=0]/config/port"},
+		ExtractorUInt: ExtractSingleUintValueFromResponse,
+		ExpResp:       uint64(6654),
+	},
+}
+
+var SubscribeOnceTests = []struct {
 	Desc          string
 	XPaths        []string
 	ExtractorUInt func(n []*gnmi.Notification) uint64
@@ -103,6 +127,29 @@ var SubscribeTests = []struct {
 	{
 		Desc:          "subscribe to interface state counters out-pkts",
 		XPaths:        []string{"/interfaces/interface[name=sw1-eth1]/state/counters/out-pkts"},
+		ExtractorUInt: ExtractSingleUintValueFromResponse,
+		MinResp:       uint64(0),
+	},
+}
+
+var SubscribeStreamTests = []struct {
+	Desc          string
+	XPaths        []string
+	MaxStreamResp int
+	ExtractorUInt func(n []*gnmi.Notification) uint64
+	MinResp       interface{}
+}{
+	{
+		Desc:          "subscribe to interface state counters in-pkts",
+		XPaths:        []string{"/interfaces/interface[name=sw1-eth1]/state/counters/in-pkts"},
+		MaxStreamResp: 3,
+		ExtractorUInt: ExtractSingleUintValueFromResponse,
+		MinResp:       uint64(0),
+	},
+	{
+		Desc:          "subscribe to interface state counters out-pkts",
+		XPaths:        []string{"/interfaces/interface[name=sw1-eth1]/state/counters/out-pkts"},
+		MaxStreamResp: 3,
 		ExtractorUInt: ExtractSingleUintValueFromResponse,
 		MinResp:       uint64(0),
 	},

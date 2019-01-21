@@ -24,6 +24,8 @@ import (
 	"ovs-gnxi/client/gnmi"
 	"ovs-gnxi/shared/logging"
 	"time"
+
+	"golang.org/x/net/context"
 )
 
 type arrayFlags []string
@@ -44,7 +46,7 @@ var (
 	encodingName    = flag.String("encoding", "JSON_IETF", "The value encoding format to be used")
 	timeOut         = flag.Duration("time_out", 10*time.Second, "Timeout for the Get request, 10 seconds by default")
 	method          = flag.String("method", "", "A valid gNMI specification method to execute against the target")
-	subscribeMode   = flag.String("subscribe_mode", "Once", "The gNMI data subscription mode")
+	subscribeMode   = flag.String("subscribe_mode", "ONCE", "The gNMI data subscription mode")
 	getXPaths       arrayFlags
 	deleteXPaths    arrayFlags
 	replaceXPaths   arrayFlags
@@ -91,11 +93,14 @@ func main() {
 
 	log.Info("Started Open vSwitch gNXI client tester\n")
 
-	gnmiClient := gnmi.NewGNMIClient(*targetAddr, *targetName, *encodingName, *timeOut)
+	gnmiClient := gnmi.NewGNMIClient(*targetAddr, *targetName, *encodingName)
 
 	switch *method {
 	case "Capabilities":
-		resp, err := gnmiClient.Capabilities()
+		ctx, cancel := context.WithTimeout(context.Background(), *timeOut)
+		defer cancel()
+
+		resp, err := gnmiClient.Capabilities(ctx)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -103,7 +108,10 @@ func main() {
 		log.Debug("== Response:")
 		utils.PrintProto(resp)
 	case "Get":
-		resp, err := gnmiClient.Get(getXPaths)
+		ctx, cancel := context.WithTimeout(context.Background(), *timeOut)
+		defer cancel()
+
+		resp, err := gnmiClient.Get(ctx, getXPaths)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -111,7 +119,10 @@ func main() {
 		log.Debug("== Response:")
 		utils.PrintProto(resp)
 	case "Set":
-		resp, err := gnmiClient.Set(deleteXPaths, replaceXPaths, updateXPaths)
+		ctx, cancel := context.WithTimeout(context.Background(), *timeOut)
+		defer cancel()
+
+		resp, err := gnmiClient.Set(ctx, deleteXPaths, replaceXPaths, updateXPaths)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -120,27 +131,60 @@ func main() {
 		utils.PrintProto(resp)
 	case "Subscribe":
 		log.Info(subscribeXPaths)
-		resp, err := gnmiClient.Subscribe(subscribeXPaths, *subscribeMode)
-		if err != nil {
-			log.Fatal(err)
-		}
 
-		log.Debug("== Response:")
-		utils.PrintProto(resp)
+		switch *subscribeMode {
+		case "STREAM":
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+
+			respChan := make(chan *pb.SubscribeResponse)
+			errChan := make(chan error)
+			defer close(errChan)
+
+			go gnmiClient.SubscribeStream(ctx, subscribeXPaths, respChan, errChan)
+
+			for {
+				select {
+				case resp := <-respChan:
+					log.Debug("== Response:")
+					utils.PrintProto(resp)
+				case err := <-errChan:
+					log.Fatal(err)
+				}
+			}
+		case "POLL":
+			// TODO(dherkel@google.com): pb.SubscriptionList_POLL
+		default:
+			ctx, cancel := context.WithTimeout(context.Background(), *timeOut)
+			defer cancel()
+
+			resp, err := gnmiClient.SubscribeOnce(ctx, subscribeXPaths)
+			if err != nil {
+				log.Fatal(err)
+			}
+
+			log.Debug("== Response:")
+			utils.PrintProto(resp)
+		}
 	default:
 		RunGNMICapabilitiesTests(gnmiClient)
 		RunGNMIGetTests(gnmiClient)
-		RunGNMISubscribeTests(gnmiClient)
+		// TODO(dherkel@google.com): Activate gNMI Set Test Suite - RunGNMISetTests(gnmi.Client)
+		RunGNMISubscribeOnceTests(gnmiClient)
+		RunGNMISubscribeStreamTests(gnmiClient)
 	}
 
 	log.Info("Finished Open vSwitch gNXI client tester\n")
 }
 
 func RunGNMICapabilitiesTests(c *gnmi.Client) {
+	ctx, cancel := context.WithTimeout(context.Background(), *timeOut)
+	defer cancel()
+
 	for _, td := range gnmi.CapabilitiesTests {
 		log.Infof("Testing GNMI Capabilities(%v)...", td.Desc)
 
-		resp, err := c.Capabilities()
+		resp, err := c.Capabilities(ctx)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -197,10 +241,13 @@ func RunGNMICapabilitiesTests(c *gnmi.Client) {
 }
 
 func RunGNMIGetTests(c *gnmi.Client) {
+	ctx, cancel := context.WithTimeout(context.Background(), *timeOut)
+	defer cancel()
+
 	for _, td := range gnmi.GetTests {
 		log.Infof("Testing GNMI Get(%v)...", td.XPaths)
 
-		resp, err := c.Get(td.XPaths)
+		resp, err := c.Get(ctx, td.XPaths)
 		if err != nil {
 			log.Fatal(err)
 			continue
@@ -225,7 +272,7 @@ func RunGNMIGetTests(c *gnmi.Client) {
 				}
 			} else if td.MinResp != nil {
 				if actResp <= td.MinResp.(uint64) {
-					log.Errorf("Subscribe(%v): expected higher than %v, actual %v", td.XPaths, td.MinResp, actResp)
+					log.Errorf("Get(%v): expected higher than %v, actual %v", td.XPaths, td.MinResp, actResp)
 				} else {
 					log.Infof("Successfully verified GNMI Subscribe(%v) with response value %v", td.XPaths, actResp)
 				}
@@ -235,11 +282,84 @@ func RunGNMIGetTests(c *gnmi.Client) {
 	}
 }
 
-func RunGNMISubscribeTests(c *gnmi.Client) {
-	for _, td := range gnmi.SubscribeTests {
-		log.Infof("Testing GNMI Subscribe(%v)...", td.XPaths)
+func RunGNMISetTests(c *gnmi.Client) {
+	ctx, cancel := context.WithTimeout(context.Background(), *timeOut)
+	defer cancel()
 
-		resp, err := c.Subscribe(td.XPaths, "Stream")
+	for _, td := range gnmi.SetTests {
+		log.Infof("Testing GNMI Set(%v, %v, %v)...", td.DeleteXPaths, td.ReplaceXPaths, td.UpdateXPaths)
+
+		respSet, err := c.Set(ctx, td.DeleteXPaths, td.ReplaceXPaths, td.UpdateXPaths)
+		if err != nil {
+			log.Fatal(err)
+			continue
+		}
+
+		verifiedDeletePaths, verifiedReplacePaths, verifiedUpdatePaths := 0, 0, 0
+
+		for _, delPath := range td.DeleteXPaths {
+			for _, resp := range respSet.Response {
+				if delPath == resp.Path.Target && resp.Op == pb.UpdateResult_DELETE {
+					verifiedDeletePaths++
+				}
+			}
+		}
+
+		if verifiedDeletePaths != len(td.DeleteXPaths) {
+			log.Errorf("Set(%v): expected %v deletes, actual %v deletes", len(td.DeleteXPaths), verifiedDeletePaths)
+		} else {
+			log.Infof("Successfully verified GNMI Set(%v) with %v deletes", verifiedDeletePaths)
+		}
+
+		if verifiedReplacePaths != len(td.ReplaceXPaths) {
+			log.Errorf("Set(%v): expected %v replaces, actual %v replaces", len(td.ReplaceXPaths), verifiedReplacePaths)
+		} else {
+			log.Infof("Successfully verified GNMI Set(%v) with %v replaces", verifiedReplacePaths)
+		}
+
+		if verifiedUpdatePaths != len(td.UpdateXPaths) {
+			log.Errorf("Set(%v): expected %v updates, actual %v updates", len(td.UpdateXPaths), verifiedUpdatePaths)
+		} else {
+			log.Infof("Successfully verified GNMI Set(%v) with %v updates", verifiedUpdatePaths)
+		}
+
+		respGet, err := c.Get(ctx, td.UpdateXPaths)
+		if err != nil {
+			log.Fatal(err)
+			continue
+		}
+
+		if td.ExtractorString != nil {
+			actResp := td.ExtractorString(respGet.Notification)
+
+			if actResp != td.ExpResp {
+				log.Errorf("Set(%v) Update: expected %v, actual %v", td.UpdateXPaths, td.ExpResp, actResp)
+			} else {
+				log.Infof("Successfully verified GNMI Set(%v) Update with response value %v", td.UpdateXPaths, actResp)
+			}
+		} else if td.ExtractorUInt != nil {
+			actResp := td.ExtractorUInt(respGet.Notification)
+
+			if td.ExpResp != nil {
+				if actResp != td.ExpResp.(uint64) {
+					log.Errorf("Set(%v) Update: expected %v, actual %v", td.UpdateXPaths, td.ExpResp, actResp)
+				} else {
+					log.Infof("Successfully verified GNMI Set(%v) Update with response value %v", td.UpdateXPaths, actResp)
+				}
+			}
+		}
+
+	}
+}
+
+func RunGNMISubscribeOnceTests(c *gnmi.Client) {
+	ctx, cancel := context.WithTimeout(context.Background(), *timeOut)
+	defer cancel()
+
+	for _, td := range gnmi.SubscribeOnceTests {
+		log.Infof("Testing GNMI Subscribe ONCE(%v)...", td.XPaths)
+
+		resp, err := c.SubscribeOnce(ctx, td.XPaths)
 		if err != nil {
 			log.Fatal(err)
 			continue
@@ -247,20 +367,63 @@ func RunGNMISubscribeTests(c *gnmi.Client) {
 
 		update, ok := resp.GetResponse().(*pb.SubscribeResponse_Update)
 		if !ok {
-			log.Fatal(err)
+			log.Errorf("Invalid subscribe ONCE(%v) response update: %v", td.XPaths, update)
 			continue
 		}
 
-		log.Info(update)
-
 		actResp := td.ExtractorUInt([]*pb.Notification{update.Update})
 
-		log.Info(actResp)
-
 		if actResp <= td.MinResp.(uint64) {
-			log.Errorf("Subscribe(%v): expected higher than %v, actual %v", td.XPaths, td.MinResp, td.ExtractorUInt([]*pb.Notification{update.Update}))
+			log.Errorf("Subscribe ONCE(%v): expected higher than %v, actual %v", td.XPaths, td.MinResp, td.ExtractorUInt([]*pb.Notification{update.Update}))
 		} else {
-			log.Infof("Successfully verified GNMI Subscribe(%v) with response value %v", td.XPaths, actResp)
+			log.Infof("Successfully verified GNMI Subscribe ONCE(%v) with response value %v", td.XPaths, actResp)
+		}
+	}
+}
+
+func RunGNMISubscribeStreamTests(c *gnmi.Client) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	for _, td := range gnmi.SubscribeStreamTests {
+		log.Infof("Testing GNMI Subscribe STREAM(%v)...", td.XPaths)
+
+		respChan := make(chan *pb.SubscribeResponse)
+		errChan := make(chan error)
+
+		go c.SubscribeStream(ctx, td.XPaths, respChan, errChan)
+
+		currentStream := 0
+
+		for {
+			select {
+			case resp := <-respChan:
+				currentStream++
+
+				update, ok := resp.GetResponse().(*pb.SubscribeResponse_Update)
+				if !ok {
+					log.Errorf("Invalid subscribe STREAM(%v) %v/%v response update: %v", td.XPaths, currentStream, td.MaxStreamResp, update)
+					continue
+				}
+
+				actResp := td.ExtractorUInt([]*pb.Notification{update.Update})
+
+				if actResp <= td.MinResp.(uint64) {
+					log.Errorf("Subscribe STREAM(%v) %v/%v: expected higher than %v, actual %v", td.XPaths, currentStream, td.MaxStreamResp, td.MinResp, td.ExtractorUInt([]*pb.Notification{update.Update}))
+				} else {
+					log.Infof("Successfully verified GNMI Subscribe STREAM(%v) %v/%v with response value %v", td.XPaths, currentStream, td.MaxStreamResp, actResp)
+				}
+
+				if currentStream >= td.MaxStreamResp {
+					ctx.Done()
+					close(respChan)
+					close(errChan)
+					log.Info("Finished all Subscribe STREAM tests")
+					break
+				}
+			case err := <-errChan:
+				log.Fatal(err)
+			}
 		}
 	}
 }
