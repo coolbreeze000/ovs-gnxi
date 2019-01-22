@@ -61,11 +61,12 @@ type ConfigCallback func(ygot.ValidatedGoStruct) error
 
 // Service struct maintains the data structure for device config and implements the gnxi interface. It supports Capabilities, Get, Set and Subscribe APIs.
 type Service struct {
-	auth     *shared.Authenticator
-	model    *Model
-	callback ConfigCallback
-	config   ygot.ValidatedGoStruct
-	mu       sync.RWMutex // mu is the RW lock to protect the access to config
+	auth         *shared.Authenticator
+	model        *Model
+	callback     ConfigCallback
+	config       ygot.ValidatedGoStruct
+	mu           sync.RWMutex // mu is the RW lock to protect the access to config
+	ConfigUpdate chan bool
 
 	timeout time.Duration
 }
@@ -78,10 +79,11 @@ func NewService(auth *shared.Authenticator, model *Model, config []byte, callbac
 		return nil, err
 	}
 	s := &Service{
-		auth:     auth,
-		model:    model,
-		config:   rootStruct,
-		callback: callback,
+		auth:         auth,
+		model:        model,
+		config:       rootStruct,
+		ConfigUpdate: make(chan bool),
+		callback:     callback,
 	}
 
 	if config != nil && s.callback != nil {
@@ -688,13 +690,29 @@ func (s *Service) Subscribe(stream pb.GNMI_SubscribeServer) error {
 		return status.Errorf(codes.InvalidArgument, "request must contain a subscription %#v", req)
 	}
 
-	if req.GetSubscribe().Mode != pb.SubscriptionList_STREAM {
-		return status.Errorf(codes.Unimplemented, "unsupported subscribe mode: %s", req.GetSubscribe().Mode)
-	}
-
 	if err := s.checkEncodingAndModel(req.GetSubscribe().GetEncoding(), req.GetSubscribe().UseModels); err != nil {
 		return status.Error(codes.Unimplemented, err.Error())
 	}
+
+	errChan := make(chan error)
+
+	switch req.GetSubscribe().Mode {
+	case pb.SubscriptionList_STREAM:
+		go s.subscribeStream(stream, req, errChan)
+	case pb.SubscriptionList_POLL:
+		// TODO(dherkel@google.com): Subscribe POLL currently not implemented.
+		return status.Errorf(codes.Unimplemented, "unsupported subscribe mode: %s", req.GetSubscribe().Mode)
+	case pb.SubscriptionList_ONCE:
+		s.subscribeOnce(stream, req, errChan)
+	default:
+		return status.Errorf(codes.Unimplemented, "unsupported subscribe mode: %s", req.GetSubscribe().Mode)
+	}
+
+	return <-errChan
+}
+
+func (s *Service) processSubscribe(req *pb.SubscribeRequest, respChan chan<- *pb.SubscribeResponse, errChan chan<- error) {
+	log.Debug("process subscribe")
 
 	prefix := req.GetSubscribe().GetPrefix()
 	paths := req.GetSubscribe().GetSubscription()
@@ -710,11 +728,13 @@ func (s *Service) Subscribe(stream pb.GNMI_SubscribeServer) error {
 			fullPath = gnmiFullPath(prefix, path.Path)
 		}
 		if fullPath.GetElem() == nil && fullPath.GetElement() != nil {
-			return status.Error(codes.Unimplemented, "deprecated path element type is unsupported")
+			errChan <- status.Error(codes.Unimplemented, "deprecated path element type is unsupported")
+			return
 		}
 		node, stat := ygotutils.GetNode(s.model.schemaTreeRoot, s.config, fullPath)
 		if isNil(node) || stat.GetCode() != int32(cpb.Code_OK) {
-			return status.Errorf(codes.NotFound, "path %v not found", fullPath)
+			errChan <- status.Errorf(codes.NotFound, "path %v not found", fullPath)
+			return
 		}
 
 		ts := time.Now().UnixNano()
@@ -730,12 +750,14 @@ func (s *Service) Subscribe(stream pb.GNMI_SubscribeServer) error {
 				if err != nil {
 					msg := fmt.Sprintf("leaf node %v does not contain a scalar type value: %v", path, err)
 					log.Error(msg)
-					return status.Error(codes.Internal, msg)
+					errChan <- status.Error(codes.Internal, msg)
+					return
 				}
 			case reflect.Int64:
 				enumMap, ok := s.model.enumData[reflect.TypeOf(node).Name()]
 				if !ok {
-					return status.Error(codes.Internal, "not a GoStruct enumeration type")
+					errChan <- status.Error(codes.Internal, "not a GoStruct enumeration type")
+					return
 				}
 				val = &pb.TypedValue{
 					Value: &pb.TypedValue_StringVal{
@@ -743,7 +765,8 @@ func (s *Service) Subscribe(stream pb.GNMI_SubscribeServer) error {
 					},
 				}
 			default:
-				return status.Errorf(codes.Internal, "unexpected kind of leaf node type: %v %v", node, kind)
+				errChan <- status.Errorf(codes.Internal, "unexpected kind of leaf node type: %v %v", node, kind)
+				return
 			}
 
 			update := &pb.Update{Path: path.Path, Val: val}
@@ -759,10 +782,12 @@ func (s *Service) Subscribe(stream pb.GNMI_SubscribeServer) error {
 		if len(req.GetSubscribe().UseModels) != len(s.model.modelData) && req.GetSubscribe().GetEncoding() != pb.Encoding_JSON_IETF {
 			results, err := ygot.TogNMINotifications(nodeStruct, ts, ygot.GNMINotificationsConfig{UsePathElem: true, PathElemPrefix: fullPath.Elem})
 			if err != nil {
-				return status.Errorf(codes.Internal, "error in serializing GoStruct to notifications: %v", err)
+				errChan <- status.Errorf(codes.Internal, "error in serializing GoStruct to notifications: %v", err)
+				return
 			}
 			if len(results) != 1 {
-				return status.Errorf(codes.Internal, "ygot.TogNMINotifications() return %d notifications instead of one", len(results))
+				errChan <- status.Errorf(codes.Internal, "ygot.TogNMINotifications() return %d notifications instead of one", len(results))
+				return
 			}
 			notification = results[0]
 			continue
@@ -773,13 +798,15 @@ func (s *Service) Subscribe(stream pb.GNMI_SubscribeServer) error {
 		if err != nil {
 			msg := fmt.Sprintf("error in constructing IETF JSON tree from requested node: %v", err)
 			log.Error(msg)
-			return status.Error(codes.Internal, msg)
+			errChan <- status.Error(codes.Internal, msg)
+			return
 		}
 		jsonDump, err := json.Marshal(jsonTree)
 		if err != nil {
 			msg := fmt.Sprintf("error in marshaling IETF JSON tree to bytes: %v", err)
 			log.Error(msg)
-			return status.Error(codes.Internal, msg)
+			errChan <- status.Error(codes.Internal, msg)
+			return
 		}
 		update := &pb.Update{
 			Path: path.Path,
@@ -802,14 +829,53 @@ func (s *Service) Subscribe(stream pb.GNMI_SubscribeServer) error {
 		},
 	}
 
-	log.Infof("Send Subscribe response to client: %v", resp)
+	log.Debugf("prepared subscribe response: %v", resp)
 
-	err = stream.Send(resp)
-	if err != nil {
-		return status.Error(codes.Unimplemented, err.Error())
+	respChan <- resp
+}
+
+func (s *Service) subscribeOnce(stream pb.GNMI_SubscribeServer, req *pb.SubscribeRequest, errChan chan<- error) {
+	log.Infof("serving subscribe ONCE")
+
+	respChan := make(chan *pb.SubscribeResponse)
+	go s.processSubscribe(req, respChan, errChan)
+
+	for {
+		select {
+		case resp := <-respChan:
+			log.Infof("Send Subscribe response to client: %v", resp)
+
+			err := stream.Send(resp)
+			if err != nil {
+				errChan <- status.Error(codes.Unimplemented, err.Error())
+			}
+
+			return
+		}
 	}
+}
 
-	return nil
+func (s *Service) subscribeStream(stream pb.GNMI_SubscribeServer, req *pb.SubscribeRequest, errChan chan<- error) {
+	log.Infof("serving subscribe STREAM")
+
+	respChan := make(chan *pb.SubscribeResponse)
+
+	for {
+		select {
+		default:
+			<-s.ConfigUpdate
+			go s.processSubscribe(req, respChan, errChan)
+
+			resp := <-respChan
+			log.Infof("Send Subscribe response to client: %v", resp)
+
+			err := stream.Send(resp)
+			if err != nil {
+				errChan <- status.Error(codes.Unimplemented, err.Error())
+				return
+			}
+		}
+	}
 }
 
 func (s *Service) PrepareServer(certificates []tls.Certificate, certPool *x509.CertPool) (*grpc.Server, error) {

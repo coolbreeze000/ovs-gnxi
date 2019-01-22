@@ -146,6 +146,12 @@ func (s *SystemBroker) OVSConfigChangeCallback(ovsConfig *Config) error {
 
 	if s.ServiceGNMI != nil {
 		s.ServiceGNMI.OverwriteConfig(gnmiConfig)
+
+		select {
+		case s.ServiceGNMI.ConfigUpdate <- true: // Send Config Update Notification, unless one already pending.
+		default:
+		}
+
 		log.Debugf("Using following config data: %s", gnmiConfig)
 	}
 
