@@ -675,11 +675,10 @@ func (s *Service) Subscribe(stream pb.GNMI_SubscribeServer) error {
 		log.Infof("denied a Subscribe request: %v", err)
 		return status.Error(codes.PermissionDenied, fmt.Sprint(err))
 	}
-	log.Infof("allowed a Subscribe request")
 
 	req, err := stream.Recv()
 
-	log.Info(req)
+	log.Infof("allowed Subscribe request: %v", req)
 
 	switch {
 	case err == io.EOF:
@@ -843,7 +842,7 @@ func (s *Service) subscribeOnce(stream pb.GNMI_SubscribeServer, req *pb.Subscrib
 	for {
 		select {
 		case resp := <-respChan:
-			log.Infof("Send Subscribe response to client: %v", resp)
+			log.Infof("Send Subscribe ONCE response to client: %v", resp)
 
 			err := stream.Send(resp)
 			if err != nil {
@@ -867,7 +866,7 @@ func (s *Service) subscribeStream(stream pb.GNMI_SubscribeServer, req *pb.Subscr
 			go s.processSubscribe(req, respChan, errChan)
 
 			resp := <-respChan
-			log.Infof("Send Subscribe response to client: %v", resp)
+			log.Infof("Send Subscribe STREAM response to client: %v", resp)
 
 			err := stream.Send(resp)
 			if err != nil {

@@ -270,7 +270,7 @@ func (c *Client) SubscribeStream(ctx context.Context, subscribeXPaths []string, 
 		Request: &pb.SubscribeRequest_Subscribe{
 			Subscribe: &pb.SubscriptionList{
 				Prefix:       &pb.Path{Target: c.targetName},
-				Mode:         pb.SubscriptionList_ONCE,
+				Mode:         pb.SubscriptionList_STREAM,
 				UseModels:    pbModelDataList,
 				Subscription: subscriptions,
 				Encoding:     pb.Encoding(encoding),
@@ -302,7 +302,13 @@ func (c *Client) SubscribeStream(ctx context.Context, subscribeXPaths []string, 
 			errChan <- err
 			return
 		}
-		respChan <- resp
+
+		select {
+		case <-ctx.Done():
+			log.Info("Stopped gNMI Subscribe Stream Client")
+			return
+		case respChan <- resp:
+		}
 	}
 }
 

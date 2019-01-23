@@ -159,6 +159,7 @@ docker logs target
 
 export CONTAINER_ID_CLIENT=`docker ps -aqf 'name=client'`
 docker exec -i -t $CONTAINER_ID_CLIENT bash
+./gnxi_client
 ```
 
 ### Test Client

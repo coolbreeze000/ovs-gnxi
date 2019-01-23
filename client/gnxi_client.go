@@ -139,7 +139,6 @@ func main() {
 
 			respChan := make(chan *pb.SubscribeResponse)
 			errChan := make(chan error)
-			defer close(errChan)
 
 			go gnmiClient.SubscribeStream(ctx, subscribeXPaths, respChan, errChan)
 
@@ -382,10 +381,9 @@ func RunGNMISubscribeOnceTests(c *gnmi.Client) {
 }
 
 func RunGNMISubscribeStreamTests(c *gnmi.Client) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
 	for _, td := range gnmi.SubscribeStreamTests {
+		ctx, cancel := context.WithCancel(context.Background())
+
 		log.Infof("Testing GNMI Subscribe STREAM(%v)...", td.XPaths)
 
 		respChan := make(chan *pb.SubscribeResponse)
@@ -393,13 +391,12 @@ func RunGNMISubscribeStreamTests(c *gnmi.Client) {
 
 		go c.SubscribeStream(ctx, td.XPaths, respChan, errChan)
 
-		currentStream := 0
+		currentStream := 1
 
+	l:
 		for {
 			select {
 			case resp := <-respChan:
-				currentStream++
-
 				update, ok := resp.GetResponse().(*pb.SubscribeResponse_Update)
 				if !ok {
 					log.Errorf("Invalid subscribe STREAM(%v) %v/%v response update: %v", td.XPaths, currentStream, td.MaxStreamResp, update)
@@ -415,14 +412,14 @@ func RunGNMISubscribeStreamTests(c *gnmi.Client) {
 				}
 
 				if currentStream >= td.MaxStreamResp {
-					ctx.Done()
-					close(respChan)
-					close(errChan)
-					log.Info("Finished all Subscribe STREAM tests")
-					break
+					cancel()
+					break l
 				}
+
+				currentStream++
 			case err := <-errChan:
 				log.Fatal(err)
+				continue
 			}
 		}
 	}
