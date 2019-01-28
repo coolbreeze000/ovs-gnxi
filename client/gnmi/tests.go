@@ -100,13 +100,13 @@ var SetTests = []struct {
 }{
 	{
 		Desc:            "set system openflow controller connection config address",
-		UpdateXPaths:    []string{"/system/openflow/controllers/controller[name=main]/connections/connection[aux-id=0]/config/address"},
+		UpdateXPaths:    []string{"/system/openflow/controllers/controller[name=main]/connections/connection[aux-id=0]/config/address:172.18.0.3"},
 		ExtractorString: ExtractSingleStringValueFromResponse,
 		ExpResp:         "172.18.0.3",
 	},
 	{
 		Desc:          "set system openflow controller connection config port",
-		UpdateXPaths:  []string{"/system/openflow/controllers/controller[name=main]/connections/connection[aux-id=0]/config/port"},
+		UpdateXPaths:  []string{"/system/openflow/controllers/controller[name=main]/connections/connection[aux-id=0]/config/port:6654"},
 		ExtractorUInt: ExtractSingleUintValueFromResponse,
 		ExpResp:       uint64(6654),
 	},

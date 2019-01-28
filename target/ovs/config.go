@@ -121,6 +121,106 @@ func NewConfig(callback ConfigCallback) *Config {
 	return &c
 }
 
+func (c *Config) deepCopy() *Config {
+	config := Config{rawCache: make(map[string]map[string]libovsdb.Row), callback: c.callback, Initialized: make(chan struct{}), ObjectCache: struct {
+		System      *System
+		Controllers map[string]*OpenFlowController
+		Interfaces  map[string]*Interface
+	}{System: &System{}, Controllers: make(map[string]*OpenFlowController), Interfaces: make(map[string]*Interface)}}
+
+	config.ObjectCache.System = &System{
+		uuid:     c.ObjectCache.System.uuid,
+		Version:  c.ObjectCache.System.Version,
+		Hostname: c.ObjectCache.System.Hostname,
+	}
+
+	config.ObjectCache.Controllers[primaryControllerName] = &OpenFlowController{
+		uuid:      c.ObjectCache.Controllers[primaryControllerName].uuid,
+		Name:      c.ObjectCache.Controllers[primaryControllerName].Name,
+		Connected: c.ObjectCache.Controllers[primaryControllerName].Connected,
+		Target:    c.ObjectCache.Controllers[primaryControllerName].Target,
+	}
+
+	for _, i := range c.ObjectCache.Interfaces {
+		config.ObjectCache.Interfaces[i.uuid] = &Interface{
+			uuid:        i.uuid,
+			Name:        i.Name,
+			MTU:         i.MTU,
+			AdminStatus: i.AdminStatus,
+			LinkStatus:  i.LinkStatus,
+			Statistics: &InterfaceStatistics{
+				ReceivedPackets:    i.Statistics.ReceivedPackets,
+				ReceivedErrors:     i.Statistics.ReceivedErrors,
+				ReceivedDropped:    i.Statistics.ReceivedDropped,
+				TransmittedPackets: i.Statistics.TransmittedPackets,
+				TransmittedErrors:  i.Statistics.TransmittedErrors,
+				TransmittedDropped: i.Statistics.TransmittedDropped,
+			},
+		}
+	}
+
+	return &config
+}
+
+func (c *Config) CreateConfigFromJSON(jsonConfig map[string]interface{}) (*Config, error) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	config := c.deepCopy()
+
+	for _, i := range jsonConfig["openconfig-platform:components"].(map[string]interface{})["component"].([]interface{}) {
+		if i.(map[string]interface{})["config"].(map[string]interface{})["name"] == "os" {
+			config.ObjectCache.System.Version = i.(map[string]interface{})["state"].(map[string]interface{})["description"].(string)
+		}
+	}
+
+	config.ObjectCache.System.Hostname = jsonConfig["openconfig-system:system"].(map[string]interface{})["config"].(map[string]interface{})["hostname"].(string)
+
+	return config, nil
+}
+
+func (c *Config) OverrideConfig(config *Config) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	newConfig := Config{rawCache: make(map[string]map[string]libovsdb.Row), callback: c.callback, Initialized: make(chan struct{}), ObjectCache: struct {
+		System      *System
+		Controllers map[string]*OpenFlowController
+		Interfaces  map[string]*Interface
+	}{System: &System{}, Controllers: make(map[string]*OpenFlowController), Interfaces: make(map[string]*Interface)}}
+
+	newConfig.ObjectCache.System = &System{
+		uuid:     c.ObjectCache.System.uuid,
+		Version:  config.ObjectCache.System.Version,
+		Hostname: config.ObjectCache.System.Hostname,
+	}
+
+	newConfig.ObjectCache.Controllers[primaryControllerName] = &OpenFlowController{
+		uuid:      c.ObjectCache.Controllers[primaryControllerName].uuid,
+		Name:      config.ObjectCache.Controllers[primaryControllerName].Name,
+		Connected: config.ObjectCache.Controllers[primaryControllerName].Connected,
+		Target:    config.ObjectCache.Controllers[primaryControllerName].Target,
+	}
+
+	for _, i := range c.ObjectCache.Interfaces {
+		newConfig.ObjectCache.Interfaces[i.uuid] = &Interface{
+			uuid:        i.uuid,
+			Name:        config.ObjectCache.Interfaces[i.Name].Name,
+			MTU:         config.ObjectCache.Interfaces[i.Name].MTU,
+			AdminStatus: config.ObjectCache.Interfaces[i.Name].AdminStatus,
+			LinkStatus:  config.ObjectCache.Interfaces[i.Name].LinkStatus,
+			Statistics: &InterfaceStatistics{
+				ReceivedPackets:    config.ObjectCache.Interfaces[i.Name].Statistics.ReceivedPackets,
+				ReceivedErrors:     config.ObjectCache.Interfaces[i.Name].Statistics.ReceivedErrors,
+				ReceivedDropped:    config.ObjectCache.Interfaces[i.Name].Statistics.ReceivedDropped,
+				TransmittedPackets: config.ObjectCache.Interfaces[i.Name].Statistics.TransmittedPackets,
+				TransmittedErrors:  config.ObjectCache.Interfaces[i.Name].Statistics.TransmittedErrors,
+				TransmittedDropped: config.ObjectCache.Interfaces[i.Name].Statistics.TransmittedDropped,
+			},
+		}
+	}
+}
+
 func (c *Config) InitializeCache(updates *libovsdb.TableUpdates) {
 	c.SyncCache(updates)
 	close(c.Initialized)

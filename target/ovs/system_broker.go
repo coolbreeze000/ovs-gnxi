@@ -158,7 +158,24 @@ func (s *SystemBroker) OVSConfigChangeCallback(ovsConfig *Config) error {
 	return nil
 }
 
-func (s *SystemBroker) GNMIConfigChangeCallback(config ygot.ValidatedGoStruct) error {
+func (s *SystemBroker) GNMIConfigChangeCallback(c ygot.ValidatedGoStruct) error {
+	log.Debug("Received new change by gNMI target")
+
+	jsonConfig, err := ygot.ConstructIETFJSON(c, &ygot.RFC7951JSONConfig{
+		AppendModuleName: true,
+	})
+	if err != nil {
+		log.Errorf("Unable to generate JSON config from gNMI config source: %v", err)
+		return err
+	}
+
+	config, err := s.OVSClient.Config.CreateConfigFromJSON(jsonConfig)
+	log.Error(config)
+
+	//s.OVSClient.Config.UpdateConfigFromJSON(jsonConfig)
+
+	// s.OVSClient.Config
+
 	return nil
 }
 

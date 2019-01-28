@@ -126,19 +126,19 @@ func buildPbUpdateList(pathValuePairs []string) ([]*pb.Update, error) {
 	for _, item := range pathValuePairs {
 		splitIndex := strings.LastIndexAny(item, ":")
 		if splitIndex < 1 {
-			return nil, errors.New(fmt.Sprintf("invalid path-value pair: %v", item))
+			return nil, fmt.Errorf("invalid path-value pair: %v", item)
 		}
 		pathValuePair := []string{item[:splitIndex], item[(splitIndex + 1):]}
 		pbPath, err := xpath.ToGNMIPath(pathValuePair[0])
 		if err != nil {
-			return nil, errors.New(fmt.Sprintf("error in parsing xpath %q to gnxi path", pathValuePair[0]))
+			return nil, fmt.Errorf("error in parsing xpath %q to gnxi path", pathValuePair[0])
 		}
 		var pbVal *pb.TypedValue
 		if pathValuePair[1][0] == '@' {
 			jsonFile := pathValuePair[1][1:]
 			jsonConfig, err := ioutil.ReadFile(jsonFile)
 			if err != nil {
-				return nil, errors.New(fmt.Sprintf("cannot read data from file %v", jsonFile))
+				return nil, fmt.Errorf("cannot read data from file %v", jsonFile)
 			}
 			jsonConfig = bytes.Trim(jsonConfig, " \r\n\t")
 			pbVal = &pb.TypedValue{
@@ -201,7 +201,7 @@ func (c *Client) Set(ctx context.Context, deleteXPaths, replaceXPaths, updateXPa
 	for _, xPath := range deleteXPaths {
 		pbPath, err := xpath.ToGNMIPath(xPath)
 		if err != nil {
-			return nil, errors.New(fmt.Sprintf("error in parsing xpath %q to gnxi path", xPath))
+			return nil, fmt.Errorf("error in parsing xpath %q to gnxi path", xPath)
 		}
 		deleteList = append(deleteList, pbPath)
 	}
@@ -225,7 +225,7 @@ func (c *Client) Set(ctx context.Context, deleteXPaths, replaceXPaths, updateXPa
 
 	response, err := cli.Set(ctx, request)
 	if err != nil {
-		return nil, errors.New(fmt.Sprintf("Set failed: %v", err))
+		return nil, fmt.Errorf("set failed: %v", err)
 	}
 
 	return response, nil

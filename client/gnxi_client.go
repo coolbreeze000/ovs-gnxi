@@ -23,6 +23,7 @@ import (
 	"os"
 	"ovs-gnxi/client/gnmi"
 	"ovs-gnxi/shared/logging"
+	"strings"
 	"time"
 
 	"golang.org/x/net/context"
@@ -168,7 +169,7 @@ func main() {
 	default:
 		RunGNMICapabilitiesTests(gnmiClient)
 		RunGNMIGetTests(gnmiClient)
-		// TODO(dherkel@google.com): Activate gNMI Set Test Suite - RunGNMISetTests(gnmi.Client)
+		RunGNMISetTests(gnmiClient)
 		RunGNMISubscribeOnceTests(gnmiClient)
 		RunGNMISubscribeStreamTests(gnmiClient)
 	}
@@ -304,25 +305,39 @@ func RunGNMISetTests(c *gnmi.Client) {
 			}
 		}
 
-		if verifiedDeletePaths != len(td.DeleteXPaths) {
-			log.Errorf("Set(%v): expected %v deletes, actual %v deletes", len(td.DeleteXPaths), verifiedDeletePaths)
-		} else {
-			log.Infof("Successfully verified GNMI Set(%v) with %v deletes", verifiedDeletePaths)
+		if len(td.DeleteXPaths) > 0 {
+			if verifiedDeletePaths != len(td.DeleteXPaths) {
+				log.Errorf("Set(%v): expected %v deletes, actual %v deletes", len(td.DeleteXPaths), verifiedDeletePaths)
+			} else {
+				log.Infof("Successfully verified GNMI Set(%v) with %v deletes", verifiedDeletePaths)
+			}
 		}
 
-		if verifiedReplacePaths != len(td.ReplaceXPaths) {
-			log.Errorf("Set(%v): expected %v replaces, actual %v replaces", len(td.ReplaceXPaths), verifiedReplacePaths)
-		} else {
-			log.Infof("Successfully verified GNMI Set(%v) with %v replaces", verifiedReplacePaths)
+		if len(td.ReplaceXPaths) > 0 {
+			if verifiedReplacePaths != len(td.ReplaceXPaths) {
+				log.Errorf("Set(%v): expected %v replaces, actual %v replaces", len(td.ReplaceXPaths), verifiedReplacePaths)
+			} else {
+				log.Infof("Successfully verified GNMI Set(%v) with %v replaces", verifiedReplacePaths)
+			}
 		}
 
-		if verifiedUpdatePaths != len(td.UpdateXPaths) {
-			log.Errorf("Set(%v): expected %v updates, actual %v updates", len(td.UpdateXPaths), verifiedUpdatePaths)
-		} else {
-			log.Infof("Successfully verified GNMI Set(%v) with %v updates", verifiedUpdatePaths)
+		if len(td.ReplaceXPaths) > 0 {
+			if verifiedUpdatePaths != len(td.UpdateXPaths) {
+				log.Errorf("Set(%v): expected %v updates, actual %v updates", len(td.UpdateXPaths), verifiedUpdatePaths)
+			} else {
+				log.Infof("Successfully verified GNMI Set(%v) with %v updates", verifiedUpdatePaths)
+			}
 		}
 
-		respGet, err := c.Get(ctx, td.UpdateXPaths)
+		var getXPaths []string
+
+		for _, getXPath := range td.UpdateXPaths {
+			path := strings.Split(getXPath, ":")
+
+			getXPaths = append(getXPaths, path[0])
+		}
+
+		respGet, err := c.Get(ctx, getXPaths)
 		if err != nil {
 			log.Fatal(err)
 			continue
