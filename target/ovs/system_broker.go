@@ -85,6 +85,15 @@ func (s *SystemBroker) GenerateConfig(config *Config) ([]byte, error) {
 			o.AdminStatus = oc.OpenconfigInterfaces_Interface_AdminStatus_UNSET
 		}
 
+		switch linkStatus := i.LinkStatus; linkStatus {
+		case "up":
+			o.OperStatus = oc.OpenconfigInterfaces_Interface_OperStatus_UP
+		case "down":
+			o.OperStatus = oc.OpenconfigInterfaces_Interface_OperStatus_DOWN
+		default:
+			o.OperStatus = oc.OpenconfigInterfaces_Interface_OperStatus_UNSET
+		}
+
 		o.Mtu = ygot.Uint16(i.MTU)
 
 		o.Counters = &oc.Interface_Counters{
@@ -169,10 +178,8 @@ func (s *SystemBroker) GNMIConfigChangeCallback(c ygot.ValidatedGoStruct) error 
 		return err
 	}
 
-	config, err := s.OVSClient.Config.CreateConfigFromJSON(jsonConfig)
-	log.Error(config)
-
-	//s.OVSClient.Config.UpdateConfigFromJSON(jsonConfig)
+	prevConfig := s.OVSClient.Config
+	s.OVSClient.Config = s.OVSClient.Config.CreateConfigFromJSON(jsonConfig)
 
 	// s.OVSClient.Config
 

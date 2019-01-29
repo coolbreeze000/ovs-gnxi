@@ -16,7 +16,6 @@ limitations under the License.
 package ovs
 
 import (
-	"errors"
 	"fmt"
 	"github.com/socketplane/libovsdb"
 	"ovs-gnxi/shared/logging"
@@ -71,6 +70,44 @@ func (o *Client) StartMonitorAll() {
 	o.Config.DumpRawCache()
 }
 
+func (o *Client) SetSystem(system *System) error {
+	condition := libovsdb.NewCondition("_uuid", "==", libovsdb.UUID{GoUUID: system.uuid})
+
+	row := make(map[string]interface{})
+	row["hostname"] = system.Hostname
+
+	updateOp := libovsdb.Operation{
+		Op:    "update",
+		Table: SystemTable,
+		Where: []interface{}{condition},
+		Row:   row,
+	}
+
+	log.Debug(updateOp)
+
+	operations := []libovsdb.Operation{updateOp}
+	reply, _ := o.Connection.Transact(o.Database, operations...)
+
+	if len(reply) < len(operations) {
+		log.Error("number of Replies should be at least equal to number of Operations")
+	}
+	ok := true
+	for i, o := range reply {
+		if o.Error != "" && i < len(operations) {
+			log.Errorf("transaction failed due to an error :", o.Error, " details:", o.Details, " in ", operations[i])
+			ok = false
+		} else if o.Error != "" {
+			log.Errorf("transaction failed due to an error :", o.Error)
+			ok = false
+		}
+	}
+	if ok {
+		return nil
+	}
+
+	return fmt.Errorf("unable to set system information")
+}
+
 func (o *Client) SetOpenFlowController(controller *OpenFlowController) error {
 	condition := libovsdb.NewCondition("_uuid", "==", libovsdb.UUID{GoUUID: controller.uuid})
 
@@ -90,15 +127,15 @@ func (o *Client) SetOpenFlowController(controller *OpenFlowController) error {
 	reply, _ := o.Connection.Transact(o.Database, operations...)
 
 	if len(reply) < len(operations) {
-		fmt.Println("Number of Replies should be at least equal to number of Operations")
+		log.Error("number of Replies should be at least equal to number of Operations")
 	}
 	ok := true
 	for i, o := range reply {
 		if o.Error != "" && i < len(operations) {
-			fmt.Println("Transaction Failed due to an error :", o.Error, " details:", o.Details, " in ", operations[i])
+			log.Errorf("transaction failed due to an error :", o.Error, " details:", o.Details, " in ", operations[i])
 			ok = false
 		} else if o.Error != "" {
-			fmt.Println("Transaction Failed due to an error :", o.Error)
+			log.Errorf("transaction failed due to an error :", o.Error)
 			ok = false
 		}
 	}
@@ -106,7 +143,45 @@ func (o *Client) SetOpenFlowController(controller *OpenFlowController) error {
 		return nil
 	}
 
-	return errors.New("unable to set openflow controller address")
+	return fmt.Errorf("unable to set system information")
+}
+
+func (o *Client) SetInterface(interf *Interface) error {
+	condition := libovsdb.NewCondition("_uuid", "==", libovsdb.UUID{GoUUID: interf.uuid})
+
+	row := make(map[string]interface{})
+	row["hostname"] = system.Hostname
+
+	updateOp := libovsdb.Operation{
+		Op:    "update",
+		Table: SystemTable,
+		Where: []interface{}{condition},
+		Row:   row,
+	}
+
+	log.Debug(updateOp)
+
+	operations := []libovsdb.Operation{updateOp}
+	reply, _ := o.Connection.Transact(o.Database, operations...)
+
+	if len(reply) < len(operations) {
+		log.Error("number of Replies should be at least equal to number of Operations")
+	}
+	ok := true
+	for i, o := range reply {
+		if o.Error != "" && i < len(operations) {
+			log.Errorf("transaction failed due to an error :", o.Error, " details:", o.Details, " in ", operations[i])
+			ok = false
+		} else if o.Error != "" {
+			log.Errorf("transaction failed due to an error :", o.Error)
+			ok = false
+		}
+	}
+	if ok {
+		return nil
+	}
+
+	return fmt.Errorf("unable to set system information")
 }
 
 type Notifier struct {
