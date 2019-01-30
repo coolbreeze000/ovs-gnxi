@@ -109,6 +109,7 @@ ovsdb-client list-columns Open_vSwitch Controller
 ovsdb-client dump Open_vSwitch Controller
 ovsdb-client dump Open_vSwitch Controller target
 ovsdb-client transact '["Open_vSwitch",{"op":"select", "table":"Controller", "where": [], "columns":["target"]}]'
+ovsdb-client transact '["Open_vSwitch",{"op":"select", "table":"Controller", "where":[["target", "==", "tcp:172.18.0.2:6653"]], "columns":["target"]}]'
 ovsdb-client transact '["Open_vSwitch",{"op":"select", "table":"Interface", "where": [], "columns":["name", "mtu", "link_state", "statistics"]}]'
 ovsdb-client transact '["Open_vSwitch",{"op":"select", "table":"Open_vSwitch", "where": [], "columns":["ovs_version", "external_ids"]}]'
 ovsdb-client transact '["Open_vSwitch",{"op":"update", "table":"Controller", "where":[["_uuid", "==", ["uuid","ebe661a9-7c45-4430-9b02-01992d96a1f0"]]], "row":{"target":"tcp:172.18.0.4:7777"}}]'

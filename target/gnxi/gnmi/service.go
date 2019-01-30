@@ -56,38 +56,42 @@ var (
 
 var log = logging.New("ovs-gnxi")
 
-// ConfigCallback is the signature of the function to apply a validated config to the physical device.
-type ConfigCallback func(ygot.ValidatedGoStruct) error
+type ConfigSetupCallback func(ygot.ValidatedGoStruct) error
+
+// ConfigChangeCallback is the signature of the function to apply a validated config to the physical device.
+type ConfigChangeCallback func(ygot.ValidatedGoStruct) error
 
 // Service struct maintains the data structure for device config and implements the gnxi interface. It supports Capabilities, Get, Set and Subscribe APIs.
 type Service struct {
-	auth         *shared.Authenticator
-	model        *Model
-	callback     ConfigCallback
-	config       ygot.ValidatedGoStruct
-	mu           sync.RWMutex // mu is the RW lock to protect the access to config
-	ConfigUpdate chan bool
+	auth           *shared.Authenticator
+	model          *Model
+	callbackSetup  ConfigSetupCallback
+	callbackChange ConfigChangeCallback
+	config         ygot.ValidatedGoStruct
+	mu             sync.RWMutex // mu is the RW lock to protect the access to config
+	ConfigUpdate   chan bool
 
 	timeout time.Duration
 }
 
 // NewService creates an instance of Service with given json config.
-func NewService(auth *shared.Authenticator, model *Model, config []byte, callback ConfigCallback) (*Service, error) {
+func NewService(auth *shared.Authenticator, model *Model, config []byte, callbackSetup ConfigSetupCallback, callbackChange ConfigChangeCallback) (*Service, error) {
 	rootStruct, err := model.NewConfigStruct(config)
 
 	if err != nil {
 		return nil, err
 	}
 	s := &Service{
-		auth:         auth,
-		model:        model,
-		config:       rootStruct,
-		ConfigUpdate: make(chan bool),
-		callback:     callback,
+		auth:           auth,
+		model:          model,
+		config:         rootStruct,
+		ConfigUpdate:   make(chan bool),
+		callbackSetup:  callbackSetup,
+		callbackChange: callbackChange,
 	}
 
-	if config != nil && s.callback != nil {
-		if err := s.callback(rootStruct); err != nil {
+	if config != nil && s.callbackSetup != nil {
+		if err := s.callbackSetup(rootStruct); err != nil {
 			return nil, err
 		}
 	}
@@ -163,9 +167,9 @@ func (s *Service) doDelete(jsonTree map[string]interface{}, prefix, path *pb.Pat
 		if err != nil {
 			return nil, status.Error(codes.Internal, err.Error())
 		}
-		if s.callback != nil {
-			if applyErr := s.callback(newConfig); applyErr != nil {
-				if rollbackErr := s.callback(s.config); rollbackErr != nil {
+		if s.callbackChange != nil {
+			if applyErr := s.callbackChange(newConfig); applyErr != nil {
+				if rollbackErr := s.callbackChange(s.config); rollbackErr != nil {
 					return nil, status.Errorf(codes.Internal, "error in rollback the failed operation (%v): %v", applyErr, rollbackErr)
 				}
 				return nil, status.Errorf(codes.Aborted, "error in applying operation to device: %v", applyErr)
@@ -260,9 +264,9 @@ func (s *Service) doReplaceOrUpdate(jsonTree map[string]interface{}, op pb.Updat
 	}
 
 	// Apply the validated operation to the device.
-	if s.callback != nil {
-		if applyErr := s.callback(newConfig); applyErr != nil {
-			if rollbackErr := s.callback(s.config); rollbackErr != nil {
+	if s.callbackChange != nil {
+		if applyErr := s.callbackChange(newConfig); applyErr != nil {
+			if rollbackErr := s.callbackChange(s.config); rollbackErr != nil {
 				return nil, status.Errorf(codes.Internal, "error in rollback the failed operation (%v): %v", applyErr, rollbackErr)
 			}
 			return nil, status.Errorf(codes.Aborted, "error in applying operation to device: %v", applyErr)
@@ -660,13 +664,6 @@ func (s *Service) OverwriteConfig(jsonConfig []byte) {
 		log.Error(msg)
 	}
 	s.config = rootStruct
-}
-
-func (s *Service) OverwriteCallback(callback ConfigCallback) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	s.callback = callback
 }
 
 func (s *Service) Subscribe(stream pb.GNMI_SubscribeServer) error {

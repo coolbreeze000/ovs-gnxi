@@ -18,7 +18,6 @@ package ovs
 import (
 	"errors"
 	"fmt"
-	"github.com/google/go-cmp/cmp"
 	"github.com/socketplane/libovsdb"
 	"reflect"
 	"strconv"
@@ -36,6 +35,15 @@ type System struct {
 	uuid     string
 	Version  string
 	Hostname string
+}
+
+func (s *System) Equal(comp *System) bool {
+	switch {
+	case s.Hostname != comp.Hostname:
+		return false
+	default:
+		return true
+	}
 }
 
 func (s *System) String() string {
@@ -57,6 +65,21 @@ type OpenFlowController struct {
 	Name      string
 	Connected bool
 	Target    *OpenFlowControllerTarget
+}
+
+func (c *OpenFlowController) Equal(comp *OpenFlowController) bool {
+	switch {
+	case c.Name != comp.Name:
+		return false
+	case c.Target.Protocol != comp.Target.Protocol:
+		return false
+	case c.Target.Port != comp.Target.Port:
+		return false
+	case c.Target.Address != comp.Target.Address:
+		return false
+	default:
+		return true
+	}
 }
 
 func (c *OpenFlowController) String() string {
@@ -95,6 +118,17 @@ type Interface struct {
 	AdminStatus string
 	LinkStatus  string
 	Statistics  *InterfaceStatistics
+}
+
+func (i *Interface) Equal(comp *Interface) bool {
+	switch {
+	case i.Name != comp.Name:
+		return false
+	case i.MTU != comp.MTU:
+		return false
+	default:
+		return true
+	}
 }
 
 func (i *Interface) String() string {
@@ -265,13 +299,6 @@ func (c *Config) CreateConfigFromJSON(jsonConfig map[string]interface{}) *Config
 func (c *Config) InitializeCache(updates *libovsdb.TableUpdates) {
 	c.SyncCache(updates)
 	close(c.Initialized)
-}
-
-func (c *Config) SyncChangesToRemote(prev *Config) {
-	if !cmp.Equal(prev.ObjectCache.System, c.ObjectCache.System) {
-
-	}
-
 }
 
 func (c *Config) SyncCache(updates *libovsdb.TableUpdates) {

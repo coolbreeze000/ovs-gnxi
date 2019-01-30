@@ -22,6 +22,7 @@ import (
 	"ovs-gnxi/target/gnxi/gnmi"
 	oc "ovs-gnxi/target/gnxi/gnmi/modeldata/generated/ocstruct"
 	"ovs-gnxi/target/gnxi/gnoi"
+
 	"sync"
 )
 
@@ -167,6 +168,22 @@ func (s *SystemBroker) OVSConfigChangeCallback(ovsConfig *Config) error {
 	return nil
 }
 
+func (s *SystemBroker) GNMIConfigSetupCallback(c ygot.ValidatedGoStruct) error {
+	log.Debug("Received initial config by gNMI target")
+
+	jsonConfig, err := ygot.ConstructIETFJSON(c, &ygot.RFC7951JSONConfig{
+		AppendModuleName: true,
+	})
+	if err != nil {
+		log.Errorf("unable to generate JSON config from gNMI config source: %v", err)
+		return err
+	}
+
+	s.OVSClient.Config = s.OVSClient.Config.CreateConfigFromJSON(jsonConfig)
+
+	return nil
+}
+
 func (s *SystemBroker) GNMIConfigChangeCallback(c ygot.ValidatedGoStruct) error {
 	log.Debug("Received new change by gNMI target")
 
@@ -174,14 +191,18 @@ func (s *SystemBroker) GNMIConfigChangeCallback(c ygot.ValidatedGoStruct) error 
 		AppendModuleName: true,
 	})
 	if err != nil {
-		log.Errorf("Unable to generate JSON config from gNMI config source: %v", err)
+		log.Errorf("unable to generate JSON config from gNMI config source: %v", err)
 		return err
 	}
 
 	prevConfig := s.OVSClient.Config
 	s.OVSClient.Config = s.OVSClient.Config.CreateConfigFromJSON(jsonConfig)
 
-	// s.OVSClient.Config
+	err = s.OVSClient.SyncChangesToRemote(prevConfig, s.OVSClient.Config)
+	if err != nil {
+		log.Errorf("unable to sync changes to remote OVS system: %v", err)
+		return err
+	}
 
 	return nil
 }

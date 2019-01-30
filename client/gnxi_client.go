@@ -48,6 +48,7 @@ var (
 	timeOut         = flag.Duration("time_out", 10*time.Second, "Timeout for the Get request, 10 seconds by default")
 	method          = flag.String("method", "", "A valid gNMI specification method to execute against the target")
 	subscribeMode   = flag.String("subscribe_mode", "ONCE", "The gNMI data subscription mode")
+	ovsAddr         = flag.String("ovs_address", "ovs.gnxi.lan:6640", "The ovs address in the format of host:port")
 	getXPaths       arrayFlags
 	deleteXPaths    arrayFlags
 	replaceXPaths   arrayFlags

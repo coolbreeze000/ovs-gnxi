@@ -17,6 +17,7 @@ package ovs
 
 import (
 	"fmt"
+	"github.com/google/go-cmp/cmp"
 	"github.com/socketplane/libovsdb"
 	"ovs-gnxi/shared/logging"
 )
@@ -150,11 +151,12 @@ func (o *Client) SetInterface(interf *Interface) error {
 	condition := libovsdb.NewCondition("_uuid", "==", libovsdb.UUID{GoUUID: interf.uuid})
 
 	row := make(map[string]interface{})
-	row["hostname"] = system.Hostname
+	row["name"] = interf.Name
+	row["mtu"] = interf.MTU
 
 	updateOp := libovsdb.Operation{
 		Op:    "update",
-		Table: SystemTable,
+		Table: InterfaceTable,
 		Where: []interface{}{condition},
 		Row:   row,
 	}
@@ -182,6 +184,45 @@ func (o *Client) SetInterface(interf *Interface) error {
 	}
 
 	return fmt.Errorf("unable to set system information")
+}
+
+func (o *Client) SyncChangesToRemote(prev, new *Config) error {
+	if !cmp.Equal(prev.ObjectCache.System, new.ObjectCache.System) {
+		log.Info("target is in inconsistent state with OVS device, syncing System")
+
+		err := o.SetSystem(new.ObjectCache.System)
+		if err != nil {
+			return err
+		}
+	}
+
+	for _, controller := range new.ObjectCache.Controllers {
+		if prev.ObjectCache.Controllers[controller.Name].uuid == controller.uuid {
+			if !cmp.Equal(prev.ObjectCache.Controllers[controller.Name], controller) {
+				log.Info("target is in inconsistent state with OVS device, syncing Controller")
+
+				err := o.SetOpenFlowController(controller)
+				if err != nil {
+					return err
+				}
+			}
+		}
+	}
+
+	for _, interf := range new.ObjectCache.Interfaces {
+		if prev.ObjectCache.Interfaces[interf.Name].uuid == interf.uuid {
+			if !cmp.Equal(prev.ObjectCache.Interfaces[interf.Name], interf) {
+				log.Info("target is in inconsistent state with OVS device, syncing Interface")
+
+				err := o.SetInterface(interf)
+				if err != nil {
+					return err
+				}
+			}
+		}
+	}
+
+	return nil
 }
 
 type Notifier struct {

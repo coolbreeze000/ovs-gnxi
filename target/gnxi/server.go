@@ -102,7 +102,7 @@ func (s *Server) createGNMIService() *gnmi.Service {
 	log.Debugf("Using following initial config data: %s", config)
 
 	s.SystemBroker.OVSClient.Config.OverwriteCallback(s.SystemBroker.OVSConfigChangeCallback)
-	c, err := gnmi.NewService(s.Auth, model, []byte(config), s.SystemBroker.GNMIConfigChangeCallback)
+	c, err := gnmi.NewService(s.Auth, model, []byte(config), s.SystemBroker.GNMIConfigSetupCallback, s.SystemBroker.GNMIConfigChangeCallback)
 	if err != nil {
 		log.Fatalf("Error on creating gNMI service: %v", err)
 	}
