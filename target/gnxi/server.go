@@ -66,12 +66,8 @@ func NewServer() (*Server, error) {
 		return nil, err
 	}
 
-	log.Info("TEST3")
-
 	s := &Server{Auth: auth, certs: certs}
 	s.SystemBroker = ovs.NewSystemBroker(s.serviceGNMI, s.serviceGNOI, s.certs)
-
-	log.Info("TEST4")
 
 	return s, nil
 }

@@ -23,6 +23,7 @@ import (
 	"os"
 	"ovs-gnxi/client/gnmi"
 	"ovs-gnxi/shared/logging"
+	"ovs-gnxi/target/ovs"
 	"strings"
 	"time"
 
@@ -40,6 +41,10 @@ func (i *arrayFlags) Set(value string) error {
 	return nil
 }
 
+const (
+	ovsProtocol = "tcp"
+)
+
 var (
 	log             = logging.New("ovs-gnxi-client")
 	targetAddr      = flag.String("target_addr", "target:10161", "The target address in the format of host:port")
@@ -49,6 +54,9 @@ var (
 	method          = flag.String("method", "", "A valid gNMI specification method to execute against the target")
 	subscribeMode   = flag.String("subscribe_mode", "ONCE", "The gNMI data subscription mode")
 	ovsAddr         = flag.String("ovs_address", "ovs.gnxi.lan:6640", "The ovs address in the format of host:port")
+	ca              = "certs/ca.crt"
+	cert            = "certs/client.crt"
+	key             = "certs/client.key"
 	getXPaths       arrayFlags
 	deleteXPaths    arrayFlags
 	replaceXPaths   arrayFlags
@@ -63,15 +71,15 @@ func setGNMIClientFlags() {
 	flag.Var(&updateXPaths, "set_update_xpath", "The gNMI Set Update XPaths to query for")
 	flag.Var(&subscribeXPaths, "subscribe_xpath", "The gNMI Subscribe XPaths to query for")
 
-	err := flag.Set("ca", "certs/ca.crt")
+	err := flag.Set("ca", ca)
 	if err != nil {
 		log.Fatalf("Unable to set ca flag: %v", err)
 	}
-	err = flag.Set("cert", "certs/client.crt")
+	err = flag.Set("cert", cert)
 	if err != nil {
 		log.Fatalf("Unable to set cert flag: %v", err)
 	}
-	err = flag.Set("key", "certs/client.key")
+	err = flag.Set("key", key)
 	if err != nil {
 		log.Fatalf("Unable to set key flag: %v", err)
 	}
@@ -330,15 +338,15 @@ func RunGNMISetTests(c *gnmi.Client) {
 			}
 		}
 
-		var getXPaths []string
+		var getXPathsAfter []string
 
 		for _, getXPath := range td.UpdateXPaths {
 			path := strings.Split(getXPath, ":")
 
-			getXPaths = append(getXPaths, path[0])
+			getXPathsAfter = append(getXPathsAfter, path[0])
 		}
 
-		respGet, err := c.Get(ctx, getXPaths)
+		respGet, err := c.Get(ctx, getXPathsAfter)
 		if err != nil {
 			log.Fatal(err)
 			continue
@@ -364,6 +372,27 @@ func RunGNMISetTests(c *gnmi.Client) {
 			}
 		}
 
+		con := strings.Split(*ovsAddr, ":")
+
+		ovsClient, err := NewClient(con[0], ovsProtocol, con[1], key, cert, ca)
+		if err != nil {
+			log.Errorf("Unable to initialize OVS Client: %v", err)
+			os.Exit(1)
+		}
+
+		result, err := ovsClient.Get(td.OVSDataBefore, ovs.ControllerTable)
+		if val, ok := result[td.OVSResultKey]; ok {
+			log.Errorf("Set(%v) OVS Data: expected %v, actual %v", td.UpdateXPaths, "", val)
+		}
+		log.Info(result["target"])
+
+		result, err = ovsClient.Get(td.OVSDataAfter, ovs.ControllerTable)
+		if val, ok := result[td.OVSResultKey]; !ok {
+			log.Errorf("Set(%v) OVS Data: expected %v, actual %v", td.UpdateXPaths, td.OVSDataAfter, val)
+		} else {
+			log.Infof("Successfully verified GNMI Set(%v) OVS response value %v", td.UpdateXPaths, val)
+		}
+		log.Info(result["target"])
 	}
 }
 

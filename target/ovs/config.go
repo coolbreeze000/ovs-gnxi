@@ -68,6 +68,8 @@ type OpenFlowController struct {
 }
 
 func (c *OpenFlowController) Equal(comp *OpenFlowController) bool {
+	log.Errorf("COMPARE: %v against %v", c, comp)
+
 	switch {
 	case c.Name != comp.Name:
 		return false
@@ -135,20 +137,21 @@ func (i *Interface) String() string {
 	return fmt.Sprintf("Interface(uuid: \"%v\", Name: \"%v\", MTU: \"%v\", AdminStatus: \"%v\", LinkStatus: \"%v\", Statistics: \"%v\")", i.uuid, i.Name, i.MTU, i.AdminStatus, i.LinkStatus, i.Statistics)
 }
 
+type ObjectCache struct {
+	System      *System
+	Controllers map[string]*OpenFlowController
+	Interfaces  map[string]*Interface
+}
 type Config struct {
 	rawCache    map[string]map[string]libovsdb.Row
-	ObjectCache struct {
-		System      *System
-		Controllers map[string]*OpenFlowController
-		Interfaces  map[string]*Interface
-	}
+	ObjCache    ObjectCache
 	mu          sync.RWMutex
 	callback    ConfigCallback
 	Initialized chan struct{}
 }
 
 func (c *Config) getInterfaceByUUID(uuid string) *Interface {
-	for _, i := range c.ObjectCache.Interfaces {
+	for _, i := range c.ObjCache.Interfaces {
 		if i.uuid == uuid {
 			return i
 		}
@@ -158,7 +161,7 @@ func (c *Config) getInterfaceByUUID(uuid string) *Interface {
 }
 
 func (c *Config) getControllerByUUID(uuid string) *OpenFlowController {
-	for _, i := range c.ObjectCache.Controllers {
+	for _, i := range c.ObjCache.Controllers {
 		if i.uuid == uuid {
 			return i
 		}
@@ -168,7 +171,7 @@ func (c *Config) getControllerByUUID(uuid string) *OpenFlowController {
 }
 
 func NewConfig(callback ConfigCallback) *Config {
-	c := Config{rawCache: make(map[string]map[string]libovsdb.Row), callback: callback, Initialized: make(chan struct{}), ObjectCache: struct {
+	c := Config{rawCache: make(map[string]map[string]libovsdb.Row), callback: callback, Initialized: make(chan struct{}), ObjCache: struct {
 		System      *System
 		Controllers map[string]*OpenFlowController
 		Interfaces  map[string]*Interface
@@ -177,27 +180,27 @@ func NewConfig(callback ConfigCallback) *Config {
 }
 
 func (c *Config) deepCopy() *Config {
-	config := Config{rawCache: make(map[string]map[string]libovsdb.Row), callback: c.callback, Initialized: make(chan struct{}), ObjectCache: struct {
+	config := Config{rawCache: make(map[string]map[string]libovsdb.Row), callback: c.callback, Initialized: make(chan struct{}), ObjCache: struct {
 		System      *System
 		Controllers map[string]*OpenFlowController
 		Interfaces  map[string]*Interface
 	}{System: &System{}, Controllers: make(map[string]*OpenFlowController), Interfaces: make(map[string]*Interface)}}
 
-	config.ObjectCache.System = &System{
-		uuid:     c.ObjectCache.System.uuid,
-		Version:  c.ObjectCache.System.Version,
-		Hostname: c.ObjectCache.System.Hostname,
+	config.ObjCache.System = &System{
+		uuid:     c.ObjCache.System.uuid,
+		Version:  c.ObjCache.System.Version,
+		Hostname: c.ObjCache.System.Hostname,
 	}
 
-	config.ObjectCache.Controllers[primaryControllerName] = &OpenFlowController{
-		uuid:      c.ObjectCache.Controllers[primaryControllerName].uuid,
-		Name:      c.ObjectCache.Controllers[primaryControllerName].Name,
-		Connected: c.ObjectCache.Controllers[primaryControllerName].Connected,
-		Target:    c.ObjectCache.Controllers[primaryControllerName].Target,
+	config.ObjCache.Controllers[primaryControllerName] = &OpenFlowController{
+		uuid:      c.ObjCache.Controllers[primaryControllerName].uuid,
+		Name:      c.ObjCache.Controllers[primaryControllerName].Name,
+		Connected: c.ObjCache.Controllers[primaryControllerName].Connected,
+		Target:    c.ObjCache.Controllers[primaryControllerName].Target,
 	}
 
-	for _, i := range c.ObjectCache.Interfaces {
-		config.ObjectCache.Interfaces[i.Name] = &Interface{
+	for _, i := range c.ObjCache.Interfaces {
+		config.ObjCache.Interfaces[i.Name] = &Interface{
 			uuid:        i.uuid,
 			Name:        i.Name,
 			MTU:         i.MTU,
@@ -225,11 +228,11 @@ func (c *Config) CreateConfigFromJSON(jsonConfig map[string]interface{}) *Config
 
 	for _, i := range jsonConfig["openconfig-platform:components"].(map[string]interface{})["component"].([]interface{}) {
 		if i.(map[string]interface{})["config"].(map[string]interface{})["name"] == "os" {
-			config.ObjectCache.System.Version = i.(map[string]interface{})["state"].(map[string]interface{})["description"].(string)
+			config.ObjCache.System.Version = i.(map[string]interface{})["state"].(map[string]interface{})["description"].(string)
 		}
 	}
 
-	config.ObjectCache.System.Hostname = jsonConfig["openconfig-system:system"].(map[string]interface{})["config"].(map[string]interface{})["hostname"].(string)
+	config.ObjCache.System.Hostname = jsonConfig["openconfig-system:system"].(map[string]interface{})["config"].(map[string]interface{})["hostname"].(string)
 
 	var updatedControllers []string
 
@@ -237,18 +240,18 @@ func (c *Config) CreateConfigFromJSON(jsonConfig map[string]interface{}) *Config
 		name := i.(map[string]interface{})["config"].(map[string]interface{})["name"].(string)
 
 		for _, j := range i.(map[string]interface{})["connections"].(map[string]interface{})["connection"].([]interface{}) {
-			config.ObjectCache.Controllers[name].Target.Address = j.(map[string]interface{})["config"].(map[string]interface{})["address"].(string)
-			config.ObjectCache.Controllers[name].Target.Port = j.(map[string]interface{})["config"].(map[string]interface{})["port"].(uint16)
-			config.ObjectCache.Controllers[name].Target.Protocol = j.(map[string]interface{})["config"].(map[string]interface{})["transport"].(string)
-			config.ObjectCache.Controllers[name].Connected = j.(map[string]interface{})["state"].(map[string]interface{})["connected"].(bool)
+			config.ObjCache.Controllers[name].Target.Address = j.(map[string]interface{})["config"].(map[string]interface{})["address"].(string)
+			config.ObjCache.Controllers[name].Target.Port = j.(map[string]interface{})["config"].(map[string]interface{})["port"].(uint16)
+			config.ObjCache.Controllers[name].Target.Protocol = j.(map[string]interface{})["config"].(map[string]interface{})["transport"].(string)
+			config.ObjCache.Controllers[name].Connected = j.(map[string]interface{})["state"].(map[string]interface{})["connected"].(bool)
 		}
 
 		updatedControllers = append(updatedControllers, name)
 	}
 
 	for _, name := range updatedControllers {
-		if _, ok := c.ObjectCache.Controllers[name]; !ok {
-			delete(c.ObjectCache.Controllers, name)
+		if _, ok := c.ObjCache.Controllers[name]; !ok {
+			delete(c.ObjCache.Controllers, name)
 		}
 	}
 
@@ -257,39 +260,39 @@ func (c *Config) CreateConfigFromJSON(jsonConfig map[string]interface{}) *Config
 	for _, i := range jsonConfig["openconfig-interfaces:interfaces"].(map[string]interface{})["interface"].([]interface{}) {
 		name := i.(map[string]interface{})["config"].(map[string]interface{})["name"].(string)
 
-		config.ObjectCache.Interfaces[name].Name = name
-		config.ObjectCache.Interfaces[name].MTU = i.(map[string]interface{})["config"].(map[string]interface{})["mtu"].(uint16)
-		config.ObjectCache.Interfaces[name].AdminStatus = i.(map[string]interface{})["state"].(map[string]interface{})["admin-status"].(string)
-		config.ObjectCache.Interfaces[name].LinkStatus = i.(map[string]interface{})["state"].(map[string]interface{})["oper-status"].(string)
+		config.ObjCache.Interfaces[name].Name = name
+		config.ObjCache.Interfaces[name].MTU = i.(map[string]interface{})["config"].(map[string]interface{})["mtu"].(uint16)
+		config.ObjCache.Interfaces[name].AdminStatus = i.(map[string]interface{})["state"].(map[string]interface{})["admin-status"].(string)
+		config.ObjCache.Interfaces[name].LinkStatus = i.(map[string]interface{})["state"].(map[string]interface{})["oper-status"].(string)
 
 		if inPkts, err := strconv.ParseUint(i.(map[string]interface{})["state"].(map[string]interface{})["counters"].(map[string]interface{})["in-pkts"].(string), 10, 64); err == nil {
-			config.ObjectCache.Interfaces[name].Statistics.ReceivedPackets = inPkts
+			config.ObjCache.Interfaces[name].Statistics.ReceivedPackets = inPkts
 		}
 
 		if inErrs, err := strconv.ParseUint(i.(map[string]interface{})["state"].(map[string]interface{})["counters"].(map[string]interface{})["in-errors"].(string), 10, 64); err == nil {
-			config.ObjectCache.Interfaces[name].Statistics.ReceivedErrors = inErrs
+			config.ObjCache.Interfaces[name].Statistics.ReceivedErrors = inErrs
 		}
 
 		if inDisc, err := strconv.ParseUint(i.(map[string]interface{})["state"].(map[string]interface{})["counters"].(map[string]interface{})["in-discards"].(string), 10, 64); err == nil {
-			config.ObjectCache.Interfaces[name].Statistics.ReceivedDropped = inDisc
+			config.ObjCache.Interfaces[name].Statistics.ReceivedDropped = inDisc
 		}
 
 		if outPkts, err := strconv.ParseUint(i.(map[string]interface{})["state"].(map[string]interface{})["counters"].(map[string]interface{})["out-pkts"].(string), 10, 64); err == nil {
-			config.ObjectCache.Interfaces[name].Statistics.TransmittedPackets = outPkts
+			config.ObjCache.Interfaces[name].Statistics.TransmittedPackets = outPkts
 		}
 
 		if outErrs, err := strconv.ParseUint(i.(map[string]interface{})["state"].(map[string]interface{})["counters"].(map[string]interface{})["out-errors"].(string), 10, 64); err == nil {
-			config.ObjectCache.Interfaces[name].Statistics.TransmittedErrors = outErrs
+			config.ObjCache.Interfaces[name].Statistics.TransmittedErrors = outErrs
 		}
 
 		if outDisc, err := strconv.ParseUint(i.(map[string]interface{})["state"].(map[string]interface{})["counters"].(map[string]interface{})["out-discards"].(string), 10, 64); err == nil {
-			config.ObjectCache.Interfaces[name].Statistics.TransmittedDropped = outDisc
+			config.ObjCache.Interfaces[name].Statistics.TransmittedDropped = outDisc
 		}
 	}
 
 	for _, name := range updatedInterfaces {
-		if _, ok := c.ObjectCache.Interfaces[name]; !ok {
-			delete(c.ObjectCache.Interfaces, name)
+		if _, ok := c.ObjCache.Interfaces[name]; !ok {
+			delete(c.ObjCache.Interfaces, name)
 		}
 	}
 
@@ -341,7 +344,7 @@ func (c *Config) SyncCache(updates *libovsdb.TableUpdates) {
 func (c *Config) UpdateObjectCacheEntry(tableName, uuid string, row libovsdb.Row) error {
 	switch tableName {
 	case SystemTable:
-		c.ObjectCache.System = &System{
+		c.ObjCache.System = &System{
 			uuid:     uuid,
 			Version:  row.Fields["ovs_version"].(string),
 			Hostname: row.Fields["external_ids"].(libovsdb.OvsMap).GoMap["hostname"].(string),
@@ -352,7 +355,7 @@ func (c *Config) UpdateObjectCacheEntry(tableName, uuid string, row libovsdb.Row
 			return err
 		}
 
-		c.ObjectCache.Controllers[primaryControllerName] = &OpenFlowController{
+		c.ObjCache.Controllers[primaryControllerName] = &OpenFlowController{
 			uuid:      uuid,
 			Name:      primaryControllerName,
 			Connected: row.Fields["is_connected"].(bool),
@@ -370,7 +373,7 @@ func (c *Config) UpdateObjectCacheEntry(tableName, uuid string, row libovsdb.Row
 			log.Errorf("Unable to perform correct type conversion for interface mtu: %v", row)
 		}
 
-		c.ObjectCache.Interfaces[row.Fields["name"].(string)] = &Interface{
+		c.ObjCache.Interfaces[row.Fields["name"].(string)] = &Interface{
 			uuid:        uuid,
 			Name:        row.Fields["name"].(string),
 			MTU:         mtu,
@@ -395,16 +398,16 @@ func (c *Config) UpdateObjectCacheEntry(tableName, uuid string, row libovsdb.Row
 func (c *Config) DeleteObjectCacheEntry(tableName, uuid string) error {
 	switch tableName {
 	case SystemTable:
-		if c.ObjectCache.System.uuid == uuid {
-			c.ObjectCache.System = nil
+		if c.ObjCache.System.uuid == uuid {
+			c.ObjCache.System = nil
 		}
 	case ControllerTable:
 		if c.getControllerByUUID(uuid) != nil {
-			delete(c.ObjectCache.Controllers, uuid)
+			delete(c.ObjCache.Controllers, uuid)
 		}
 	case InterfaceTable:
 		if c.getInterfaceByUUID(uuid) != nil {
-			delete(c.ObjectCache.Interfaces, uuid)
+			delete(c.ObjCache.Interfaces, uuid)
 		}
 	default:
 		return errors.New("unable to delete unsupported table entry")
@@ -424,7 +427,14 @@ func (c *Config) DumpRawCache() {
 }
 
 func (c *Config) DumpObjectCache() {
-	log.Debug(c.ObjectCache)
+	log.Debug(c.ObjCache)
+}
+
+func (c *Config) OverwriteObjectCache(cache ObjectCache) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	c.ObjCache = cache
 }
 
 func (c *Config) OverwriteCallback(callback ConfigCallback) {

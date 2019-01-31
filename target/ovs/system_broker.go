@@ -56,7 +56,7 @@ func NewSystemBroker(serviceGNMI *gnmi.Service, ServiceGNOI *gnoi.Service, certs
 func (s *SystemBroker) GenerateConfig(config *Config) ([]byte, error) {
 	d := &oc.Device{
 		System: &oc.System{
-			Hostname: ygot.String(config.ObjectCache.System.Hostname),
+			Hostname: ygot.String(config.ObjCache.System.Hostname),
 			Openflow: &oc.System_Openflow{},
 		},
 	}
@@ -69,9 +69,9 @@ func (s *SystemBroker) GenerateConfig(config *Config) ([]byte, error) {
 	v.Type = &oc.Component_Type_Union_E_OpenconfigPlatformTypes_OPENCONFIG_SOFTWARE_COMPONENT{
 		E_OpenconfigPlatformTypes_OPENCONFIG_SOFTWARE_COMPONENT: oc.OpenconfigPlatformTypes_OPENCONFIG_SOFTWARE_COMPONENT_OPERATING_SYSTEM,
 	}
-	v.Description = ygot.String(config.ObjectCache.System.Version)
+	v.Description = ygot.String(config.ObjCache.System.Version)
 
-	for _, i := range config.ObjectCache.Interfaces {
+	for _, i := range config.ObjCache.Interfaces {
 		o, err := d.NewInterface(i.Name)
 		if err != nil {
 			return []byte(""), err
@@ -111,7 +111,7 @@ func (s *SystemBroker) GenerateConfig(config *Config) ([]byte, error) {
 		}
 	}
 
-	for _, i := range config.ObjectCache.Controllers {
+	for _, i := range config.ObjCache.Controllers {
 		c, err := d.System.Openflow.NewController(i.Name)
 		if err != nil {
 			return []byte(""), err
@@ -184,10 +184,10 @@ func (s *SystemBroker) GNMIConfigSetupCallback(c ygot.ValidatedGoStruct) error {
 	return nil
 }
 
-func (s *SystemBroker) GNMIConfigChangeCallback(c ygot.ValidatedGoStruct) error {
+func (s *SystemBroker) GNMIConfigChangeCallback(old, new ygot.ValidatedGoStruct) error {
 	log.Debug("Received new change by gNMI target")
 
-	jsonConfig, err := ygot.ConstructIETFJSON(c, &ygot.RFC7951JSONConfig{
+	jsonConfigOld, err := ygot.ConstructIETFJSON(old, &ygot.RFC7951JSONConfig{
 		AppendModuleName: true,
 	})
 	if err != nil {
@@ -195,10 +195,19 @@ func (s *SystemBroker) GNMIConfigChangeCallback(c ygot.ValidatedGoStruct) error 
 		return err
 	}
 
-	prevConfig := s.OVSClient.Config
-	s.OVSClient.Config = s.OVSClient.Config.CreateConfigFromJSON(jsonConfig)
+	jsonConfigNew, err := ygot.ConstructIETFJSON(new, &ygot.RFC7951JSONConfig{
+		AppendModuleName: true,
+	})
+	if err != nil {
+		log.Errorf("unable to generate JSON config from gNMI config source: %v", err)
+		return err
+	}
 
-	err = s.OVSClient.SyncChangesToRemote(prevConfig, s.OVSClient.Config)
+	prevConfig := s.OVSClient.Config.CreateConfigFromJSON(jsonConfigOld)
+
+	s.OVSClient.Config.OverwriteObjectCache(s.OVSClient.Config.CreateConfigFromJSON(jsonConfigNew).ObjCache)
+
+	err = s.OVSClient.SyncChangesToRemote(&prevConfig.ObjCache, &s.OVSClient.Config.ObjCache)
 	if err != nil {
 		log.Errorf("unable to sync changes to remote OVS system: %v", err)
 		return err

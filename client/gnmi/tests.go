@@ -18,6 +18,7 @@ package gnmi
 import (
 	"github.com/openconfig/gnmi/proto/gnmi"
 	"github.com/openconfig/gnmi/proto/gnmi_ext"
+	"ovs-gnxi/target/ovs"
 )
 
 var CapabilitiesTests = []struct {
@@ -97,18 +98,30 @@ var SetTests = []struct {
 	ExpResp         interface{}
 	ExtractorUInt   func(n []*gnmi.Notification) uint64
 	MinResp         interface{}
+	Type            string
+	OVSResultKey    string
+	OVSDataBefore   string
+	OVSDataAfter    string
 }{
 	{
 		Desc:            "set system openflow controller connection config address",
 		UpdateXPaths:    []string{"/system/openflow/controllers/controller[name=main]/connections/connection[aux-id=0]/config/address:172.18.0.3"},
 		ExtractorString: ExtractSingleStringValueFromResponse,
 		ExpResp:         "172.18.0.3",
+		Type:            ovs.ControllerTable,
+		OVSResultKey:    "target",
+		OVSDataBefore:   "tcp:172.18.0.2:6653",
+		OVSDataAfter:    "tcp:172.18.0.3:6653",
 	},
 	{
 		Desc:          "set system openflow controller connection config port",
 		UpdateXPaths:  []string{"/system/openflow/controllers/controller[name=main]/connections/connection[aux-id=0]/config/port:6654"},
 		ExtractorUInt: ExtractSingleUintValueFromResponse,
 		ExpResp:       uint64(6654),
+		Type:          ovs.ControllerTable,
+		OVSResultKey:  "target",
+		OVSDataBefore: "tcp:172.18.0.3:6653",
+		OVSDataAfter:  "tcp:172.18.0.3:6654",
 	},
 }
 

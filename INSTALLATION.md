@@ -161,6 +161,9 @@ docker logs target
 export CONTAINER_ID_CLIENT=`docker ps -aqf 'name=client'`
 docker exec -i -t $CONTAINER_ID_CLIENT bash
 ./gnxi_client
+
+./build_client.sh && docker-compose up -d --force-recreate --build client && export CONTAINER_ID_CLIENT=`docker ps -aqf 'name=client'` && docker exec -i -t $CONTAINER_ID_CLIENT bash
+./gnxi_client
 ```
 
 ### Test Client

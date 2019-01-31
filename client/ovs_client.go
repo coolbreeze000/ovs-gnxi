@@ -45,7 +45,17 @@ func NewClient(address, protocol, port, privateKeyPath, publicKeyPath, caPath st
 	return &o, nil
 }
 
-func GetOpenFlowController(target string) error {
+func (o *Client) Get(param, table string) (map[string]interface{}, error) {
+	// TODO(dherkel@google.com): This needs to be more generic if anything other than Controller needs to be tested.
+	switch table {
+	case ControllerTable:
+		return o.GetOpenFlowControllerTarget(param)
+	}
+
+	return nil, fmt.Errorf("unimplemented OVS Get Type")
+}
+
+func (o *Client) GetOpenFlowControllerTarget(target string) (map[string]interface{}, error) {
 	condition := libovsdb.NewCondition("target", "==", target)
 
 	updateOp := libovsdb.Operation{
@@ -54,8 +64,6 @@ func GetOpenFlowController(target string) error {
 		Where:   []interface{}{condition},
 		Columns: []string{"target"},
 	}
-
-	log.Info(updateOp)
 
 	operations := []libovsdb.Operation{updateOp}
 	reply, _ := o.Connection.Transact(o.Database, operations...)
@@ -74,8 +82,8 @@ func GetOpenFlowController(target string) error {
 		}
 	}
 	if ok {
-		return nil
+		return reply[0].Rows[0], nil
 	}
 
-	return fmt.Errorf("unable to set system information")
+	return nil, fmt.Errorf("unable to set system information")
 }
