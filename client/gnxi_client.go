@@ -295,8 +295,21 @@ func RunGNMISetTests(c *gnmi.Client) {
 	ctx, cancel := context.WithTimeout(context.Background(), *timeOut)
 	defer cancel()
 
+	con := strings.Split(*ovsAddr, ":")
+
+	ovsClient, err := NewClient(con[0], ovsProtocol, con[1], key, cert, ca)
+	if err != nil {
+		log.Errorf("Unable to initialize OVS Client: %v", err)
+		os.Exit(1)
+	}
+
 	for _, td := range gnmi.SetTests {
 		log.Infof("Testing GNMI Set(%v, %v, %v)...", td.DeleteXPaths, td.ReplaceXPaths, td.UpdateXPaths)
+
+		result, err := ovsClient.Get(td.OVSDataBefore, ovs.ControllerTable)
+		if val, ok := result[td.OVSResultKey]; !ok {
+			log.Errorf("Set(%v) OVS Data: expected %v, actual %v", td.UpdateXPaths, "", val)
+		}
 
 		respSet, err := c.Set(ctx, td.DeleteXPaths, td.ReplaceXPaths, td.UpdateXPaths)
 		if err != nil {
@@ -372,19 +385,10 @@ func RunGNMISetTests(c *gnmi.Client) {
 			}
 		}
 
-		con := strings.Split(*ovsAddr, ":")
-
-		ovsClient, err := NewClient(con[0], ovsProtocol, con[1], key, cert, ca)
-		if err != nil {
-			log.Errorf("Unable to initialize OVS Client: %v", err)
-			os.Exit(1)
-		}
-
-		result, err := ovsClient.Get(td.OVSDataBefore, ovs.ControllerTable)
+		result, err = ovsClient.Get(td.OVSDataBefore, ovs.ControllerTable)
 		if val, ok := result[td.OVSResultKey]; ok {
 			log.Errorf("Set(%v) OVS Data: expected %v, actual %v", td.UpdateXPaths, "", val)
 		}
-		log.Info(result["target"])
 
 		result, err = ovsClient.Get(td.OVSDataAfter, ovs.ControllerTable)
 		if val, ok := result[td.OVSResultKey]; !ok {

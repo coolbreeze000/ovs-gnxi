@@ -61,7 +61,7 @@ var GetTests = []struct {
 		Desc:            "get platform component os state version",
 		XPaths:          []string{"/components/component[name=os]/state/description"},
 		ExtractorString: ExtractSingleStringValueFromResponse,
-		ExpResp:         "2.9.0",
+		ExpResp:         "2.9.2",
 	},
 	{
 		Desc:            "get system openflow controller connection config address",
@@ -122,6 +122,26 @@ var SetTests = []struct {
 		OVSResultKey:  "target",
 		OVSDataBefore: "tcp:172.18.0.3:6653",
 		OVSDataAfter:  "tcp:172.18.0.3:6654",
+	},
+	{
+		Desc:            "set system openflow controller connection config address",
+		UpdateXPaths:    []string{"/system/openflow/controllers/controller[name=main]/connections/connection[aux-id=0]/config/address:172.18.0.2"},
+		ExtractorString: ExtractSingleStringValueFromResponse,
+		ExpResp:         "172.18.0.2",
+		Type:            ovs.ControllerTable,
+		OVSResultKey:    "target",
+		OVSDataBefore:   "tcp:172.18.0.3:6654",
+		OVSDataAfter:    "tcp:172.18.0.2:6654",
+	},
+	{
+		Desc:          "set system openflow controller connection config port",
+		UpdateXPaths:  []string{"/system/openflow/controllers/controller[name=main]/connections/connection[aux-id=0]/config/port:6653"},
+		ExtractorUInt: ExtractSingleUintValueFromResponse,
+		ExpResp:       uint64(6653),
+		Type:          ovs.ControllerTable,
+		OVSResultKey:  "target",
+		OVSDataBefore: "tcp:172.18.0.2:6654",
+		OVSDataAfter:  "tcp:172.18.0.2:6653",
 	},
 }
 

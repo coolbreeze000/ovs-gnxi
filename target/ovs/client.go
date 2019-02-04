@@ -122,7 +122,7 @@ func (o *Client) SetOpenFlowController(controller *OpenFlowController) error {
 		Row:   row,
 	}
 
-	log.Info(updateOp)
+	log.Debug(updateOp)
 
 	operations := []libovsdb.Operation{updateOp}
 	reply, _ := o.Connection.Transact(o.Database, operations...)
@@ -187,10 +187,6 @@ func (o *Client) SetInterface(interf *Interface) error {
 }
 
 func (o *Client) SyncChangesToRemote(prev, new *ObjectCache) error {
-	log.Error(prev)
-
-	log.Error(new)
-
 	if !cmp.Equal(prev.System, new.System) {
 		log.Info("target is in inconsistent state with OVS device, syncing System")
 
@@ -203,7 +199,6 @@ func (o *Client) SyncChangesToRemote(prev, new *ObjectCache) error {
 	for _, controller := range new.Controllers {
 		log.Error(controller)
 		if prev.Controllers[controller.Name].uuid == controller.uuid {
-			log.Error("UUID MATCH")
 			if !cmp.Equal(prev.Controllers[controller.Name], controller) {
 				log.Info("target is in inconsistent state with OVS device, syncing Controller")
 

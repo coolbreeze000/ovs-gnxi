@@ -168,10 +168,10 @@ func (s *SystemBroker) OVSConfigChangeCallback(ovsConfig *Config) error {
 	return nil
 }
 
-func (s *SystemBroker) GNMIConfigSetupCallback(c ygot.ValidatedGoStruct) error {
+func (s *SystemBroker) GNMIConfigSetupCallback(new ygot.ValidatedGoStruct) error {
 	log.Debug("Received initial config by gNMI target")
 
-	jsonConfig, err := ygot.ConstructIETFJSON(c, &ygot.RFC7951JSONConfig{
+	jsonConfig, err := ygot.ConstructIETFJSON(new, &ygot.RFC7951JSONConfig{
 		AppendModuleName: true,
 	})
 	if err != nil {
@@ -179,21 +179,15 @@ func (s *SystemBroker) GNMIConfigSetupCallback(c ygot.ValidatedGoStruct) error {
 		return err
 	}
 
-	s.OVSClient.Config = s.OVSClient.Config.CreateConfigFromJSON(jsonConfig)
+	cache := CopyConfigObjectCache(s.OVSClient.Config.ObjCache)
+	OverwriteObjectCacheWithJSON(cache, jsonConfig)
+	s.OVSClient.Config.OverwriteObjectCache(cache)
 
 	return nil
 }
 
-func (s *SystemBroker) GNMIConfigChangeCallback(old, new ygot.ValidatedGoStruct) error {
+func (s *SystemBroker) GNMIConfigChangeCallback(new ygot.ValidatedGoStruct) error {
 	log.Debug("Received new change by gNMI target")
-
-	jsonConfigOld, err := ygot.ConstructIETFJSON(old, &ygot.RFC7951JSONConfig{
-		AppendModuleName: true,
-	})
-	if err != nil {
-		log.Errorf("unable to generate JSON config from gNMI config source: %v", err)
-		return err
-	}
 
 	jsonConfigNew, err := ygot.ConstructIETFJSON(new, &ygot.RFC7951JSONConfig{
 		AppendModuleName: true,
@@ -203,11 +197,13 @@ func (s *SystemBroker) GNMIConfigChangeCallback(old, new ygot.ValidatedGoStruct)
 		return err
 	}
 
-	prevConfig := s.OVSClient.Config.CreateConfigFromJSON(jsonConfigOld)
+	prevCache := CopyConfigObjectCache(s.OVSClient.Config.ObjCache)
+	newCache := CopyConfigObjectCache(s.OVSClient.Config.ObjCache)
+	OverwriteObjectCacheWithJSON(newCache, jsonConfigNew)
 
-	s.OVSClient.Config.OverwriteObjectCache(s.OVSClient.Config.CreateConfigFromJSON(jsonConfigNew).ObjCache)
+	s.OVSClient.Config.OverwriteObjectCache(newCache)
 
-	err = s.OVSClient.SyncChangesToRemote(&prevConfig.ObjCache, &s.OVSClient.Config.ObjCache)
+	err = s.OVSClient.SyncChangesToRemote(prevCache, s.OVSClient.Config.ObjCache)
 	if err != nil {
 		log.Errorf("unable to sync changes to remote OVS system: %v", err)
 		return err

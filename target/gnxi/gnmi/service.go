@@ -59,7 +59,7 @@ var log = logging.New("ovs-gnxi")
 type ConfigSetupCallback func(ygot.ValidatedGoStruct) error
 
 // ConfigChangeCallback is the signature of the function to apply a validated config to the physical device.
-type ConfigChangeCallback func(ygot.ValidatedGoStruct, ygot.ValidatedGoStruct) error
+type ConfigChangeCallback func(ygot.ValidatedGoStruct) error
 
 // Service struct maintains the data structure for device config and implements the gnxi interface. It supports Capabilities, Get, Set and Subscribe APIs.
 type Service struct {
@@ -168,8 +168,8 @@ func (s *Service) doDelete(jsonTree map[string]interface{}, prefix, path *pb.Pat
 			return nil, status.Error(codes.Internal, err.Error())
 		}
 		if s.callbackChange != nil {
-			if applyErr := s.callbackChange(s.config, newConfig); applyErr != nil {
-				if rollbackErr := s.callbackChange(newConfig, s.config); rollbackErr != nil {
+			if applyErr := s.callbackChange(newConfig); applyErr != nil {
+				if rollbackErr := s.callbackChange(s.config); rollbackErr != nil {
 					return nil, status.Errorf(codes.Internal, "error in rollback the failed operation (%v): %v", applyErr, rollbackErr)
 				}
 				return nil, status.Errorf(codes.Aborted, "error in applying operation to device: %v", applyErr)
@@ -265,8 +265,8 @@ func (s *Service) doReplaceOrUpdate(jsonTree map[string]interface{}, op pb.Updat
 
 	// Apply the validated operation to the device.
 	if s.callbackChange != nil {
-		if applyErr := s.callbackChange(s.config, newConfig); applyErr != nil {
-			if rollbackErr := s.callbackChange(newConfig, s.config); rollbackErr != nil {
+		if applyErr := s.callbackChange(newConfig); applyErr != nil {
+			if rollbackErr := s.callbackChange(s.config); rollbackErr != nil {
 				return nil, status.Errorf(codes.Internal, "error in rollback the failed operation (%v): %v", applyErr, rollbackErr)
 			}
 			return nil, status.Errorf(codes.Aborted, "error in applying operation to device: %v", applyErr)

@@ -58,20 +58,21 @@ func (o *Client) Get(param, table string) (map[string]interface{}, error) {
 func (o *Client) GetOpenFlowControllerTarget(target string) (map[string]interface{}, error) {
 	condition := libovsdb.NewCondition("target", "==", target)
 
-	updateOp := libovsdb.Operation{
+	selectOp := libovsdb.Operation{
 		Op:      "select",
 		Table:   ControllerTable,
 		Where:   []interface{}{condition},
 		Columns: []string{"target"},
 	}
 
-	operations := []libovsdb.Operation{updateOp}
+	operations := []libovsdb.Operation{selectOp}
 	reply, _ := o.Connection.Transact(o.Database, operations...)
 
 	if len(reply) < len(operations) {
 		log.Error("number of Replies should be at least equal to number of Operations")
 	}
 	ok := true
+
 	for i, o := range reply {
 		if o.Error != "" && i < len(operations) {
 			log.Errorf("transaction failed due to an error :", o.Error, " details:", o.Details, " in ", operations[i])
@@ -81,8 +82,13 @@ func (o *Client) GetOpenFlowControllerTarget(target string) (map[string]interfac
 			ok = false
 		}
 	}
+
 	if ok {
-		return reply[0].Rows[0], nil
+		if len(reply[0].Rows) > 1 {
+			return reply[0].Rows[0], nil
+		}
+
+		return map[string]interface{}{}, nil
 	}
 
 	return nil, fmt.Errorf("unable to set system information")
