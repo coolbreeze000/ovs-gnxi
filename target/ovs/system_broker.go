@@ -22,6 +22,7 @@ import (
 	"ovs-gnxi/target/gnxi/gnmi"
 	oc "ovs-gnxi/target/gnxi/gnmi/modeldata/generated/ocstruct"
 	"ovs-gnxi/target/gnxi/gnoi"
+	"strings"
 
 	"sync"
 )
@@ -122,7 +123,7 @@ func (s *SystemBroker) GenerateConfig(config *Config) ([]byte, error) {
 		n.Port = ygot.Uint16(i.Target.Port)
 		n.Connected = ygot.Bool(i.Connected)
 
-		switch protocol := i.Target.Protocol; protocol {
+		switch protocol := strings.ToLower(i.Target.Protocol); protocol {
 		case "tcp":
 			n.Transport = oc.OpenconfigOpenflow_Transport_TCP
 		case "tls":

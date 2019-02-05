@@ -84,7 +84,7 @@ func (o *Client) GetOpenFlowControllerTarget(target string) (map[string]interfac
 	}
 
 	if ok {
-		if len(reply[0].Rows) > 1 {
+		if len(reply[0].Rows) > 0 {
 			return reply[0].Rows[0], nil
 		}
 

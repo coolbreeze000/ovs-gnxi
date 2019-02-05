@@ -330,24 +330,18 @@ func RunGNMISetTests(c *gnmi.Client) {
 		if len(td.DeleteXPaths) > 0 {
 			if verifiedDeletePaths != len(td.DeleteXPaths) {
 				log.Errorf("Set(%v): expected %v deletes, actual %v deletes", len(td.DeleteXPaths), verifiedDeletePaths)
-			} else {
-				log.Infof("Successfully verified GNMI Set(%v) with %v deletes", verifiedDeletePaths)
 			}
 		}
 
 		if len(td.ReplaceXPaths) > 0 {
 			if verifiedReplacePaths != len(td.ReplaceXPaths) {
 				log.Errorf("Set(%v): expected %v replaces, actual %v replaces", len(td.ReplaceXPaths), verifiedReplacePaths)
-			} else {
-				log.Infof("Successfully verified GNMI Set(%v) with %v replaces", verifiedReplacePaths)
 			}
 		}
 
 		if len(td.ReplaceXPaths) > 0 {
 			if verifiedUpdatePaths != len(td.UpdateXPaths) {
 				log.Errorf("Set(%v): expected %v updates, actual %v updates", len(td.UpdateXPaths), verifiedUpdatePaths)
-			} else {
-				log.Infof("Successfully verified GNMI Set(%v) with %v updates", verifiedUpdatePaths)
 			}
 		}
 
@@ -393,10 +387,52 @@ func RunGNMISetTests(c *gnmi.Client) {
 		result, err = ovsClient.Get(td.OVSDataAfter, ovs.ControllerTable)
 		if val, ok := result[td.OVSResultKey]; !ok {
 			log.Errorf("Set(%v) OVS Data: expected %v, actual %v", td.UpdateXPaths, td.OVSDataAfter, val)
-		} else {
-			log.Infof("Successfully verified GNMI Set(%v) OVS response value %v", td.UpdateXPaths, val)
 		}
-		log.Info(result["target"])
+
+		respSet, err = c.Set(ctx, td.RollbackDeleteXPaths, td.RollbackReplaceXPaths, td.RollbackUpdateXPaths)
+		if err != nil {
+			log.Fatal(err)
+			continue
+		}
+
+		var getXPathsBefore []string
+
+		for _, getXPath := range td.RollbackUpdateXPaths {
+			path := strings.Split(getXPath, ":")
+
+			getXPathsBefore = append(getXPathsBefore, path[0])
+		}
+
+		respGet, err = c.Get(ctx, getXPathsBefore)
+		if err != nil {
+			log.Fatal(err)
+			continue
+		}
+
+		if td.ExtractorString != nil {
+			actResp := td.ExtractorString(respGet.Notification)
+
+			if actResp != td.RollbackExpResp {
+				log.Errorf("Rollback Set(%v) Update: expected %v, actual %v", td.UpdateXPaths, td.RollbackExpResp, actResp)
+			} else {
+				log.Infof("Successfully verified Rollback GNMI Set(%v) Update with response value %v", td.UpdateXPaths, actResp)
+			}
+		} else if td.ExtractorUInt != nil {
+			actResp := td.ExtractorUInt(respGet.Notification)
+
+			if td.ExpResp != nil {
+				if actResp != td.RollbackExpResp.(uint64) {
+					log.Errorf("Rollback Set(%v) Update: expected %v, actual %v", td.UpdateXPaths, td.RollbackExpResp, actResp)
+				} else {
+					log.Infof("Successfully verified Rollback GNMI Set(%v) Update with response value %v", td.UpdateXPaths, actResp)
+				}
+			}
+		}
+
+		result, err = ovsClient.Get(td.OVSDataBefore, ovs.ControllerTable)
+		if val, ok := result[td.OVSResultKey]; !ok {
+			log.Errorf("Set(%v) OVS Data: expected %v, actual %v", td.UpdateXPaths, "", val)
+		}
 	}
 }
 

@@ -197,7 +197,6 @@ func (o *Client) SyncChangesToRemote(prev, new *ObjectCache) error {
 	}
 
 	for _, controller := range new.Controllers {
-		log.Error(controller)
 		if prev.Controllers[controller.Name].uuid == controller.uuid {
 			if !cmp.Equal(prev.Controllers[controller.Name], controller) {
 				log.Info("target is in inconsistent state with OVS device, syncing Controller")

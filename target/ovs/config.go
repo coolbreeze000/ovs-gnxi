@@ -232,7 +232,7 @@ func OverwriteObjectCacheWithJSON(cache *ObjectCache, jsonConfig map[string]inte
 		for _, j := range i.(map[string]interface{})["connections"].(map[string]interface{})["connection"].([]interface{}) {
 			cache.Controllers[name].Target.Address = j.(map[string]interface{})["config"].(map[string]interface{})["address"].(string)
 			cache.Controllers[name].Target.Port = j.(map[string]interface{})["config"].(map[string]interface{})["port"].(uint16)
-			cache.Controllers[name].Target.Protocol = j.(map[string]interface{})["config"].(map[string]interface{})["transport"].(string)
+			cache.Controllers[name].Target.Protocol = strings.ToLower(j.(map[string]interface{})["config"].(map[string]interface{})["transport"].(string))
 			cache.Controllers[name].Connected = j.(map[string]interface{})["state"].(map[string]interface{})["connected"].(bool)
 		}
 	}

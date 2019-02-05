@@ -90,58 +90,46 @@ var GetTests = []struct {
 }
 
 var SetTests = []struct {
-	Desc            string
-	DeleteXPaths    []string
-	ReplaceXPaths   []string
-	UpdateXPaths    []string
-	ExtractorString func(n []*gnmi.Notification) string
-	ExpResp         interface{}
-	ExtractorUInt   func(n []*gnmi.Notification) uint64
-	MinResp         interface{}
-	Type            string
-	OVSResultKey    string
-	OVSDataBefore   string
-	OVSDataAfter    string
+	Desc                  string
+	DeleteXPaths          []string
+	RollbackDeleteXPaths  []string
+	ReplaceXPaths         []string
+	RollbackReplaceXPaths []string
+	UpdateXPaths          []string
+	RollbackUpdateXPaths  []string
+	ExtractorString       func(n []*gnmi.Notification) string
+	ExpResp               interface{}
+	RollbackExpResp       interface{}
+	ExtractorUInt         func(n []*gnmi.Notification) uint64
+	MinResp               interface{}
+	Type                  string
+	OVSResultKey          string
+	OVSDataBefore         string
+	OVSDataAfter          string
 }{
 	{
-		Desc:            "set system openflow controller connection config address",
-		UpdateXPaths:    []string{"/system/openflow/controllers/controller[name=main]/connections/connection[aux-id=0]/config/address:172.18.0.3"},
-		ExtractorString: ExtractSingleStringValueFromResponse,
-		ExpResp:         "172.18.0.3",
-		Type:            ovs.ControllerTable,
-		OVSResultKey:    "target",
-		OVSDataBefore:   "tcp:172.18.0.2:6653",
-		OVSDataAfter:    "tcp:172.18.0.3:6653",
+		Desc:                 "set system openflow controller connection config address",
+		UpdateXPaths:         []string{"/system/openflow/controllers/controller[name=main]/connections/connection[aux-id=0]/config/address:172.18.0.3"},
+		RollbackUpdateXPaths: []string{"/system/openflow/controllers/controller[name=main]/connections/connection[aux-id=0]/config/address:172.18.0.2"},
+		ExtractorString:      ExtractSingleStringValueFromResponse,
+		ExpResp:              "172.18.0.3",
+		RollbackExpResp:      "172.18.0.2",
+		Type:                 ovs.ControllerTable,
+		OVSResultKey:         "target",
+		OVSDataBefore:        "tcp:172.18.0.2:6653",
+		OVSDataAfter:         "tcp:172.18.0.3:6653",
 	},
 	{
-		Desc:          "set system openflow controller connection config port",
-		UpdateXPaths:  []string{"/system/openflow/controllers/controller[name=main]/connections/connection[aux-id=0]/config/port:6654"},
-		ExtractorUInt: ExtractSingleUintValueFromResponse,
-		ExpResp:       uint64(6654),
-		Type:          ovs.ControllerTable,
-		OVSResultKey:  "target",
-		OVSDataBefore: "tcp:172.18.0.3:6653",
-		OVSDataAfter:  "tcp:172.18.0.3:6654",
-	},
-	{
-		Desc:            "set system openflow controller connection config address",
-		UpdateXPaths:    []string{"/system/openflow/controllers/controller[name=main]/connections/connection[aux-id=0]/config/address:172.18.0.2"},
-		ExtractorString: ExtractSingleStringValueFromResponse,
-		ExpResp:         "172.18.0.2",
-		Type:            ovs.ControllerTable,
-		OVSResultKey:    "target",
-		OVSDataBefore:   "tcp:172.18.0.3:6654",
-		OVSDataAfter:    "tcp:172.18.0.2:6654",
-	},
-	{
-		Desc:          "set system openflow controller connection config port",
-		UpdateXPaths:  []string{"/system/openflow/controllers/controller[name=main]/connections/connection[aux-id=0]/config/port:6653"},
-		ExtractorUInt: ExtractSingleUintValueFromResponse,
-		ExpResp:       uint64(6653),
-		Type:          ovs.ControllerTable,
-		OVSResultKey:  "target",
-		OVSDataBefore: "tcp:172.18.0.2:6654",
-		OVSDataAfter:  "tcp:172.18.0.2:6653",
+		Desc:                 "set system openflow controller connection config port",
+		UpdateXPaths:         []string{"/system/openflow/controllers/controller[name=main]/connections/connection[aux-id=0]/config/port:6654"},
+		RollbackUpdateXPaths: []string{"/system/openflow/controllers/controller[name=main]/connections/connection[aux-id=0]/config/port:6653"},
+		ExtractorUInt:        ExtractSingleUintValueFromResponse,
+		ExpResp:              uint64(6654),
+		RollbackExpResp:      uint64(6653),
+		Type:                 ovs.ControllerTable,
+		OVSResultKey:         "target",
+		OVSDataBefore:        "tcp:172.18.0.2:6653",
+		OVSDataAfter:         "tcp:172.18.0.2:6654",
 	},
 }
 
