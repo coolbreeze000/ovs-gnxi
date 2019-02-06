@@ -25,7 +25,7 @@ import (
 
 func TestOVSDBConnection(t *testing.T) {
 	// Dial an OVSDB connection and create a *ovsdb.Client.
-	c, err := ovsdb.Dial("tcp", "ovs.gnxi.lan:6640")
+	c, err := ovsdb.Dial("tcp", "target.gnxi.lan:6640")
 	if err != nil {
 		log.Fatalf("failed to dial: %v", err)
 	}

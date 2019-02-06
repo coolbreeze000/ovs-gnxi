@@ -29,7 +29,7 @@
   },
   "openconfig-system:system": {
     "config": {
-      "hostname": "ovs.gnxi.lan"
+      "hostname": "target.gnxi.lan"
     },
     "openconfig-openflow:openflow": {
       "controllers": {

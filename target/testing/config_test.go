@@ -30,7 +30,7 @@ func TestGenerateConfig(t *testing.T) {
 	// supplied by the fakeroot_name argument.
 	d := &oc.Device{
 		System: &oc.System{
-			Hostname: ygot.String("ovs.gnxi.lan"),
+			Hostname: ygot.String("target.gnxi.lan"),
 			Openflow: &oc.System_Openflow{},
 		},
 	}

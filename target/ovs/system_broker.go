@@ -28,7 +28,7 @@ import (
 )
 
 const (
-	ovsAddress  = "ovs.gnxi.lan"
+	ovsAddress  = "target.gnxi.lan"
 	ovsProtocol = "tcp"
 	ovsPort     = "6640"
 )
