@@ -165,6 +165,9 @@ docker exec -i -t $CONTAINER_ID_CLIENT bash
 export CONTAINER_ID_TARGET=`docker ps -aqf 'name=target'`
 docker exec -i -t $CONTAINER_ID_TARGET bash
 
+./build_target.sh && docker-compose up -d --force-recreate --build target && export CONTAINER_ID_TARGET=`docker ps -aqf 'name=target'` && docker exec -i -t $CONTAINER_ID_TARGET bash
+tail -f /var/log/gnxi_target/gnxi_target.log
+
 ./build_client.sh && docker-compose up -d --force-recreate --build client && export CONTAINER_ID_CLIENT=`docker ps -aqf 'name=client'` && docker exec -i -t $CONTAINER_ID_CLIENT bash
 ./gnxi_client
 ```

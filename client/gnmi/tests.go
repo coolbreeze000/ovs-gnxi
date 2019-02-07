@@ -55,7 +55,7 @@ var GetTests = []struct {
 		Desc:            "get system config hostname",
 		XPaths:          []string{"/system/config/hostname"},
 		ExtractorString: ExtractSingleStringValueFromResponse,
-		ExpResp:         "ovs.gnxi.lan",
+		ExpResp:         "target.gnxi.lan",
 	},
 	{
 		Desc:            "get platform component os state version",
