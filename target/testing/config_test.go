@@ -19,7 +19,7 @@ import (
 	"fmt"
 	"github.com/openconfig/ygot/ygot"
 	"os"
-	oc "ovs-gnxi/target/gnxi/gnmi/modeldata/generated/ocstruct"
+	oc "ovs-gnxi/shared/gnmi/modeldata/generated/ocstruct"
 	"testing"
 )
 

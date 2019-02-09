@@ -21,13 +21,13 @@ import (
 	"fmt"
 	"net"
 	"ovs-gnxi/shared"
+	"ovs-gnxi/shared/gnmi/modeldata/generated/ocstruct"
 	"ovs-gnxi/shared/logging"
 	"ovs-gnxi/target/gnxi/gnmi"
-	"ovs-gnxi/target/gnxi/gnmi/modeldata/generated/ocstruct"
 	"ovs-gnxi/target/ovs"
 	"sync"
 
-	"ovs-gnxi/target/gnxi/gnmi/modeldata"
+	"ovs-gnxi/shared/gnmi/modeldata"
 	"ovs-gnxi/target/gnxi/gnoi"
 	"reflect"
 )

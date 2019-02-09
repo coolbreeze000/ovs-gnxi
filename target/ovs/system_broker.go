@@ -19,8 +19,8 @@ import (
 	"github.com/openconfig/ygot/ygot"
 	"os"
 	"ovs-gnxi/shared"
+	oc "ovs-gnxi/shared/gnmi/modeldata/generated/ocstruct"
 	"ovs-gnxi/target/gnxi/gnmi"
-	oc "ovs-gnxi/target/gnxi/gnmi/modeldata/generated/ocstruct"
 	"ovs-gnxi/target/gnxi/gnoi"
 	"strings"
 
