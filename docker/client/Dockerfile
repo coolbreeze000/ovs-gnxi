@@ -4,6 +4,7 @@ RUN mkdir -p $HOME/certs
 WORKDIR $HOME
 ADD client/gnxi_client $HOME/gnxi_client
 ADD docker/client/certs/ca.crt $HOME/certs/ca.crt
+ADD docker/client/certs/ca.key $HOME/certs/ca.key
 ADD docker/client/certs/client.crt $HOME/certs/client.crt
 ADD docker/client/certs/client.key $HOME/certs/client.key
 RUN apt-get update

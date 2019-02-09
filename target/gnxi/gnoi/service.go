@@ -19,7 +19,6 @@ package gnoi
 import (
 	"crypto/tls"
 	"crypto/x509"
-	"github.com/google/gnxi/gnoi/cert"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -35,21 +34,21 @@ type RebootCallback func() error
 type RotateCertificatesCallback func(certificates *shared.ServerCertificates) error
 
 type Service struct {
-	auth                *shared.Authenticator
-	certServer          *cert.Server
-	certManager         *cert.Manager
+	auth *shared.Authenticator
+	//certServer          *cert.Server
+	//certManager         *cert.Manager
 	defaultCertificate  *tls.Certificate
 	callbackReboot      RebootCallback
 	callbackRotateCerts RotateCertificatesCallback
 }
 
 func NewService(auth *shared.Authenticator, defaultCertificate *tls.Certificate, callbackReboot RebootCallback, callbackRotateCerts RotateCertificatesCallback) (*Service, error) {
-	certManager := cert.NewManager(defaultCertificate.PrivateKey)
-	certServer := cert.NewServer(certManager)
+	//certManager := cert.NewManager(defaultCertificate.PrivateKey)
+	//certServer := cert.NewServer(certManager)
 	return &Service{
-		auth:                auth,
-		certServer:          certServer,
-		certManager:         certManager,
+		auth: auth,
+		//certServer:          certServer,
+		//certManager:         certManager,
 		defaultCertificate:  defaultCertificate,
 		callbackReboot:      callbackReboot,
 		callbackRotateCerts: callbackRotateCerts,
@@ -67,9 +66,9 @@ func (s *Service) PrepareServer(certificates []tls.Certificate, certPool *x509.C
 }
 
 func (s *Service) RegisterService(g *grpc.Server) {
-	s.certServer.Register(g)
+	//s.certServer.Register(g)
 	pbs.RegisterSystemServer(g, s)
-	pbc.RegisterCertificateManagementServer(g, s)
+	//pbc.RegisterCertificateManagementServer(g, s)
 	reflection.Register(g)
 }
 
@@ -79,26 +78,6 @@ func (s *Service) Reboot(context.Context, *pbs.RebootRequest) (*pbs.RebootRespon
 	}
 
 	return nil, status.Error(codes.Unimplemented, "Reboot is not implemented.")
-}
-
-func (s *Service) Rotate(pbc.CertificateManagement_RotateServer) error {
-	return status.Error(codes.Unimplemented, "Rotate is not implemented.")
-}
-
-func (s *Service) GetCertificates(context.Context, *pbc.GetCertificatesRequest) (*pbc.GetCertificatesResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "GetCertificates is not implemented.")
-}
-
-func (s *Service) Install(pbc.CertificateManagement_InstallServer) error {
-	return status.Error(codes.Unimplemented, "Install is not implemented.")
-}
-
-func (s *Service) RevokeCertificates(context.Context, *pbc.RevokeCertificatesRequest) (*pbc.RevokeCertificatesResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "RevokeCertificates is not implemented.")
-}
-
-func (s *Service) CanGenerateCSR(context.Context, *pbc.CanGenerateCSRRequest) (*pbc.CanGenerateCSRResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "CanGenerateCSR is not implemented.")
 }
 
 func (s *Service) RebootStatus(context.Context, *pbs.RebootStatusRequest) (*pbs.RebootStatusResponse, error) {
@@ -129,8 +108,27 @@ func (s *Service) SwitchControlProcessor(context.Context, *pbs.SwitchControlProc
 	return nil, status.Error(codes.Unimplemented, "SwitchControlProcessor is not implemented.")
 }
 
-// RegisterNotifier registers a function that will be called everytime the number
-// of Certificates or CA Certificates changes.
+func (s *Service) Rotate(pbc.CertificateManagement_RotateServer) error {
+	return status.Error(codes.Unimplemented, "Rotate is not implemented.")
+}
+
+func (s *Service) GetCertificates(context.Context, *pbc.GetCertificatesRequest) (*pbc.GetCertificatesResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "GetCertificates is not implemented.")
+}
+
+func (s *Service) Install(pbc.CertificateManagement_InstallServer) error {
+	return status.Error(codes.Unimplemented, "Install is not implemented.")
+}
+
+func (s *Service) RevokeCertificates(context.Context, *pbc.RevokeCertificatesRequest) (*pbc.RevokeCertificatesResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "RevokeCertificates is not implemented.")
+}
+
+func (s *Service) CanGenerateCSR(context.Context, *pbc.CanGenerateCSRRequest) (*pbc.CanGenerateCSRResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "CanGenerateCSR is not implemented.")
+}
+
+/*
 func (s *Service) RegisterNotifier(f cert.Notifier) {
 	s.certManager.RegisterNotifier(f)
-}
+}*/

@@ -196,13 +196,13 @@ func main() {
 		}
 	default:
 		RunGNMICapabilitiesTests(gnmiClient)
+		RunGNOIRebootTests(gnoiClient)
+		RunGNOIGetCertificatesTests(gnoiClient)
+		RunGNOIRotateCertificatesTests(gnoiClient)
 		RunGNMIGetTests(gnmiClient)
 		RunGNMISetTests(gnmiClient)
 		RunGNMISubscribeOnceTests(gnmiClient)
 		RunGNMISubscribeStreamTests(gnmiClient)
-		RunGNOIRebootTests(gnoiClient)
-		RunGNOIGetCertificatesTests(gnoiClient)
-		RunGNOIRotateCertificatesTests(gnoiClient)
 	}
 
 	log.Info("Finished Open vSwitch gNXI client tester\n")

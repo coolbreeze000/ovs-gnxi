@@ -26,7 +26,7 @@ It has these top-level messages:
         SetPackageRequest
         SetPackageResponse
 */
-package system
+package gnoi_system
 
 import proto "github.com/golang/protobuf/proto"
 import fmt "fmt"
