@@ -47,6 +47,10 @@ Vagrant.configure("2") do |config|
     echo "GOBIN=$GOPATH/bin" >> /etc/environment
     echo "PATH=$GOBIN:${PATH}" >> /etc/environment
     mkdir -p "$GOPATH"
+    apt-get install -y autoconf automake libtool curl make g++ unzip protobuf-compiler golang-goprotobuf-dev
+    wget https://github.com/protocolbuffers/protobuf/releases/download/v3.6.1/protobuf-all-3.6.1.tar.gz
+    tarx xzvf protobuf-all-3.6.1.tar.gz
+    cp -R /root/go/src/ovs-gnxi/vendor/github.com/openconfig /root/go/src/github.com/openconfig
     cd /root/go/src/ovs-gnxi/scripts/
     ./generate_certs.sh > /dev/null 2>&1 &
     ./build_all.sh > /dev/null 2>&1 &

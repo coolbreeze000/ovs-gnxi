@@ -206,14 +206,25 @@ func (s *SystemBroker) GNMIConfigChangeCallback(new ygot.ValidatedGoStruct) erro
 
 	err = s.OVSClient.SyncChangesToRemote(prevCache, s.OVSClient.Config.ObjCache)
 	if err != nil {
-		log.Errorf("unable to sync changes to remote OVS system: %v", err)
+		log.Errorf("unable to sync changes to OVS system: %v", err)
 		return err
 	}
 
 	return nil
 }
 
-func (s *SystemBroker) GNOICertificateChangeCallback(certs *shared.ServerCertificates) error {
+func (s *SystemBroker) GNOIRebootCallback() error {
+	log.Debug("Received OVS reboot request by GNOI target")
+	err := s.OVSClient.RestartSystem()
+	if err != nil {
+		log.Errorf("unable to reboot OVS system: %v", err)
+		return err
+	}
+
+	return nil
+}
+
+func (s *SystemBroker) GNOIRotateCertificatesCallback(certs *shared.ServerCertificates) error {
 	return nil
 }
 

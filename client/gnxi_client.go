@@ -17,11 +17,14 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"github.com/google/gnxi/utils"
+	"github.com/google/gnxi/utils/entity"
 	"github.com/google/go-cmp/cmp"
 	pb "github.com/openconfig/gnmi/proto/gnmi"
 	"os"
 	"ovs-gnxi/client/gnmi"
+	"ovs-gnxi/client/gnoi"
 	"ovs-gnxi/shared/logging"
 	"ovs-gnxi/target/ovs"
 	"strings"
@@ -47,22 +50,34 @@ const (
 
 var (
 	log             = logging.New("ovs-gnxi-client")
-	targetAddr      = flag.String("target_addr", "target:10161", "The target address in the format of host:port")
+	targetAddr      = flag.String("target_addr", "target", "The target address")
+	targetGNMIPort  = flag.String("target_gnmi_port", "10161", "The target gNMI port")
+	targetGNOIPort  = flag.String("target_gnoi_port", "10162", "The target gNOI port")
 	targetName      = flag.String("target_name", "target.gnxi.lan", "The target name use to verify the hostname returned by TLS handshake")
 	encodingName    = flag.String("encoding", "JSON_IETF", "The value encoding format to be used")
 	timeOut         = flag.Duration("time_out", 10*time.Second, "Timeout for the Get request, 10 seconds by default")
 	method          = flag.String("method", "", "A valid gNMI specification method to execute against the target")
 	subscribeMode   = flag.String("subscribe_mode", "ONCE", "The gNMI data subscription mode")
 	ovsAddr         = flag.String("ovs_address", "target.gnxi.lan:6640", "The ovs address in the format of host:port")
-	ca              = "certs/ca.crt"
-	cert            = "certs/client.crt"
-	key             = "certs/client.key"
+	caCert          = "certs/ca.crt"
+	caKey           = "certs/ca.key"
+	clientCert      = "certs/client.crt"
+	clientKey       = "certs/client.key"
 	getXPaths       arrayFlags
 	deleteXPaths    arrayFlags
 	replaceXPaths   arrayFlags
 	updateXPaths    arrayFlags
 	subscribeXPaths arrayFlags
 )
+
+func loadCAEntity(cert, key string) *entity.Entity {
+	caEntity, err := entity.FromFile(cert, key)
+	if err != nil {
+		log.Fatalf("Failed to load certificate and key from file: %v", err)
+	}
+
+	return caEntity
+}
 
 func setGNMIClientFlags() {
 	flag.Var(&getXPaths, "get_xpath", "The gNMI Get XPaths to query for")
@@ -71,15 +86,15 @@ func setGNMIClientFlags() {
 	flag.Var(&updateXPaths, "set_update_xpath", "The gNMI Set Update XPaths to query for")
 	flag.Var(&subscribeXPaths, "subscribe_xpath", "The gNMI Subscribe XPaths to query for")
 
-	err := flag.Set("ca", ca)
+	err := flag.Set("ca", caCert)
 	if err != nil {
 		log.Fatalf("Unable to set ca flag: %v", err)
 	}
-	err = flag.Set("cert", cert)
+	err = flag.Set("cert", clientCert)
 	if err != nil {
 		log.Fatalf("Unable to set cert flag: %v", err)
 	}
-	err = flag.Set("key", key)
+	err = flag.Set("key", clientKey)
 	if err != nil {
 		log.Fatalf("Unable to set key flag: %v", err)
 	}
@@ -103,7 +118,11 @@ func main() {
 
 	log.Info("Started Open vSwitch gNXI client tester\n")
 
-	gnmiClient := gnmi.NewGNMIClient(*targetAddr, *targetName, *encodingName)
+	gnmiTarget := fmt.Sprintf("%s:%s", *targetAddr, *targetGNMIPort)
+	gnoiTarget := fmt.Sprintf("%s:%s", *targetAddr, *targetGNOIPort)
+
+	gnmiClient := gnmi.NewClient(gnmiTarget, *targetName, *encodingName)
+	gnoiClient := gnoi.NewClient(gnoiTarget, *targetName, *encodingName, loadCAEntity(caCert, caKey))
 
 	switch *method {
 	case "Capabilities":
@@ -181,6 +200,9 @@ func main() {
 		RunGNMISetTests(gnmiClient)
 		RunGNMISubscribeOnceTests(gnmiClient)
 		RunGNMISubscribeStreamTests(gnmiClient)
+		RunGNOIRebootTests(gnoiClient)
+		RunGNOIGetCertificatesTests(gnoiClient)
+		RunGNOIRotateCertificatesTests(gnoiClient)
 	}
 
 	log.Info("Finished Open vSwitch gNXI client tester\n")
@@ -297,7 +319,7 @@ func RunGNMISetTests(c *gnmi.Client) {
 
 	con := strings.Split(*ovsAddr, ":")
 
-	ovsClient, err := NewClient(con[0], ovsProtocol, con[1], key, cert, ca)
+	ovsClient, err := NewClient(con[0], ovsProtocol, con[1], clientKey, clientCert, caCert)
 	if err != nil {
 		log.Errorf("Unable to initialize OVS Client: %v", err)
 		os.Exit(1)
@@ -506,6 +528,54 @@ func RunGNMISubscribeStreamTests(c *gnmi.Client) {
 				log.Fatal(err)
 				continue
 			}
+		}
+	}
+}
+
+func RunGNOIRebootTests(c *gnoi.Client) {
+	ctx, cancel := context.WithTimeout(context.Background(), *timeOut)
+	defer cancel()
+
+	for _, td := range gnoi.RebootTests {
+		log.Infof("Testing GNOI Reboot(%v)...", td.Desc)
+
+		resp, err := c.Reboot(ctx, td.Message)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		log.Error(resp)
+	}
+}
+
+func RunGNOIGetCertificatesTests(c *gnoi.Client) {
+	ctx, cancel := context.WithTimeout(context.Background(), *timeOut)
+	defer cancel()
+
+	for _, td := range gnoi.GetCertificatesTests {
+		log.Infof("Testing GNOI GetCertificates(%v)...", td.Desc)
+
+		resp, err := c.GetCertificates(ctx)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		log.Error(resp)
+	}
+}
+
+func RunGNOIRotateCertificatesTests(c *gnoi.Client) {
+	ctx, cancel := context.WithTimeout(context.Background(), *timeOut)
+	defer cancel()
+
+	for _, td := range gnoi.RotateCertificatesTests {
+		log.Infof("Testing GNOI Reboot(%v)...", td.Desc)
+
+		err := c.RotateCertificates(ctx, td.CertID)
+		if err != nil {
+			log.Fatal(err)
+		} else {
+			log.Infof("Successfully verified GNOI Rotate Certificates(%v)", td.Desc)
 		}
 	}
 }

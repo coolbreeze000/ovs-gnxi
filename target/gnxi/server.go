@@ -107,7 +107,7 @@ func (s *Server) createGNMIService() *gnmi.Service {
 }
 
 func (s *Server) CreateGNOIService() *gnoi.Service {
-	c, err := gnoi.NewService(s.Auth, &s.certs.Certificate, s.SystemBroker.GNOICertificateChangeCallback)
+	c, err := gnoi.NewService(s.Auth, &s.certs.Certificate, s.SystemBroker.GNOIRebootCallback, s.SystemBroker.GNOIRotateCertificatesCallback)
 	if err != nil {
 		log.Fatalf("Error on creating gNOI service: %v", err)
 	}

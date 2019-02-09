@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"github.com/google/go-cmp/cmp"
 	"github.com/socketplane/libovsdb"
+	"os/exec"
 	"ovs-gnxi/shared/logging"
 )
 
@@ -27,6 +28,9 @@ const (
 	SystemTable     = "Open_vSwitch"
 	ControllerTable = "Controller"
 	InterfaceTable  = "Interface"
+	StartOVS        = "start_ovs.sh"
+	StopOVS         = "stop_ovs.sh"
+	RestartOVS      = "restart_ovs.sh"
 )
 
 var log = logging.New("ovs-gnxi")
@@ -284,6 +288,74 @@ func (o *Client) MonitorAll() error {
 
 	go receivedMonitorUpdate()
 	<-quit
+
+	return nil
+}
+
+/*
+func (o *Client) StopSystem() error {
+	log.Debug("Stopping OVS system...")
+
+	var sysproc = &syscall.SysProcAttr{Credential: &syscall.Credential{syscall.Getuid(), syscall.Getgid(), []uint32{}}, Noctty: true}
+	var attr = os.ProcAttr{
+		Dir: ".",
+		Env: os.Environ(),
+		Files: []*os.File{
+			os.Stdin,
+			nil,
+			nil,
+		},
+		Sys: sysproc,
+	}
+	process, err := os.StartProcess(StopOVS, []string{StopOVS}, &attr)
+	if err != nil {
+		return err
+	}
+
+	// Detach Process
+	err = process.Release()
+	if err != nil {
+		return err
+	}
+
+	return nil
+}*/
+
+func (o *Client) StartSystem() error {
+	log.Debug("Starting OVS system...")
+
+	cmd := exec.Command("/bin/sh", StartOVS)
+
+	_, err := cmd.Output()
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (o *Client) StopSystem() error {
+	log.Debug("Stopping OVS system...")
+
+	cmd := exec.Command("/bin/sh", StopOVS)
+
+	_, err := cmd.Output()
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (o *Client) RestartSystem() error {
+	log.Debug("Restarting OVS system...")
+
+	cmd := exec.Command("/bin/sh", RestartOVS)
+
+	_, err := cmd.Output()
+	if err != nil {
+		return err
+	}
 
 	return nil
 }

@@ -18,7 +18,6 @@ package gnmi
 import (
 	"bytes"
 	"fmt"
-	"github.com/go-errors/errors"
 	"github.com/golang/protobuf/proto"
 	"github.com/google/gnxi/utils/credentials"
 	"github.com/google/gnxi/utils/xpath"
@@ -43,8 +42,8 @@ type Client struct {
 	encodingName  string
 }
 
-// NewGNMIClient returns an instance of GNMIClient struct.
-func NewGNMIClient(targetAddress, targetName, encodingName string) *Client {
+// NewClient returns an instance of GNMIClient struct.
+func NewClient(targetAddress, targetName, encodingName string) *Client {
 	return &Client{
 		targetAddress: targetAddress,
 		targetName:    targetName,
@@ -69,7 +68,7 @@ func (c *Client) Capabilities(ctx context.Context) (*pb.CapabilityResponse, erro
 
 	response, err := cli.Capabilities(ctx, request)
 	if err != nil {
-		return nil, errors.New(fmt.Sprintf("error in getting capabilities: %v", err))
+		return nil, fmt.Errorf("error in getting capabilities: %v", err)
 	}
 
 	return response, nil
@@ -99,7 +98,7 @@ func (c *Client) Get(ctx context.Context, getXPaths []string) (*pb.GetResponse, 
 	for _, xPath := range getXPaths {
 		pbPath, err := xpath.ToGNMIPath(xPath)
 		if err != nil {
-			return nil, errors.New(fmt.Sprintf("error in parsing xpath %q to gnxi path", xPath))
+			return nil, fmt.Errorf("error in parsing xpath %q to gnxi path", xPath)
 		}
 		pbPathList = append(pbPathList, pbPath)
 	}
@@ -115,7 +114,7 @@ func (c *Client) Get(ctx context.Context, getXPaths []string) (*pb.GetResponse, 
 
 	response, err := cli.Get(ctx, request)
 	if err != nil {
-		return nil, errors.New(fmt.Sprintf("Get failed: %v", err))
+		return nil, fmt.Errorf("Get failed: %v", err)
 	}
 
 	return response, nil
