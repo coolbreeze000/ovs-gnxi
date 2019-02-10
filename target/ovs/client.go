@@ -35,7 +35,6 @@ const (
 
 var log = logging.New("ovs-gnxi")
 
-var quit chan bool
 var update chan *libovsdb.TableUpdates
 
 type Client struct {
@@ -46,33 +45,40 @@ type Client struct {
 	Database   string
 	Notifier   *Notifier
 	Config     *Config
+	ErrorChan  chan error
+	QuitChan   chan bool
 }
 
 func (o *Client) String() string {
 	return fmt.Sprintf("OVSClient(Address: \"%v\", Protocol: \"%v\", Port: \"%v\")", o.Address, o.Protocol, o.Port)
 }
 
-func NewClient(address, protocol, port, privateKeyPath, publicKeyPath, caPath string, config *Config) (*Client, error) {
-	var err error
-
-	o := Client{Address: address, Protocol: protocol, Port: port, Database: DefaultDatabase, Config: config}
-
-	o.Connection, err = libovsdb.ConnectUsingProtocolWithTLS(o.Protocol, fmt.Sprintf("%v:%v", o.Address, o.Port), privateKeyPath, publicKeyPath, caPath)
-	if err != nil {
-		log.Errorf("failed to dial: %v", err)
-		return nil, err
-	}
-
+func NewClient(address, protocol, port string) (*Client, error) {
+	o := Client{Address: address, Protocol: protocol, Port: port, Database: DefaultDatabase, ErrorChan: make(chan error), Config: NewConfig()}
 	return &o, nil
 }
 
-func (o *Client) StartMonitorAll() {
-	err := o.MonitorAll()
+func (o *Client) StartClient(privateKeyPath, publicKeyPath, caPath string) {
+	log.Info("OVS Client start")
+
+	var err error
+	o.Connection, err = libovsdb.ConnectUsingProtocolWithTLS(o.Protocol, fmt.Sprintf("%v:%v", o.Address, o.Port), privateKeyPath, publicKeyPath, caPath)
 	if err != nil {
-		log.Error(err)
+		o.ErrorChan <- err
 	}
 
+	o.MonitorAll()
 	o.Config.DumpRawCache()
+}
+
+func (o *Client) StopMonitoring() {
+	o.QuitChan <- true
+}
+
+func (o *Client) StopClient() {
+	log.Info("OVS Client exit")
+	o.Connection.Disconnect()
+	o.Config = NewConfig()
 }
 
 func (o *Client) SetSystem(system *System) error {
@@ -246,9 +252,11 @@ func (n Notifier) Echo([]interface{}) {
 func (n Notifier) Disconnected(client *libovsdb.OvsdbClient) {
 }
 
-func receivedMonitorUpdate() {
+func (o *Client) receivedMonitorUpdate() {
 	for {
 		select {
+		case <-o.QuitChan:
+			return
 		case currUpdate := <-update:
 			for tableName, tableUpdate := range currUpdate.Updates {
 				log.Debugf("Received Table update for \"%v\" with content: %v", tableName, tableUpdate)
@@ -257,8 +265,8 @@ func receivedMonitorUpdate() {
 	}
 }
 
-func (o *Client) MonitorAll() error {
-	quit = make(chan bool)
+func (o *Client) MonitorAll() {
+	o.QuitChan = make(chan bool)
 	update = make(chan *libovsdb.TableUpdates)
 
 	request := libovsdb.MonitorRequest{
@@ -280,16 +288,12 @@ func (o *Client) MonitorAll() error {
 
 	initial, err := o.Connection.Monitor(DefaultDatabase, "", requests)
 	if err != nil {
-		log.Error(err)
-		return err
+		o.ErrorChan <- err
 	}
 
 	o.Config.InitializeCache(initial)
 
-	go receivedMonitorUpdate()
-	<-quit
-
-	return nil
+	go o.receivedMonitorUpdate()
 }
 
 /*

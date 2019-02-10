@@ -99,6 +99,11 @@ screen -r mininet
 h1 ping h2
 # CTRL+a d
 ovs-ofctl -O OpenFlow13 dump-flows sw1
+
+screen -ls
+screen -X -S target quit
+/home/target/gnxi_target
+cat /var/log/gnxi_target/gnxi_target.log
 ```
 
 #### Container: Client (ovs-client)

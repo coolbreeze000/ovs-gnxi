@@ -17,18 +17,13 @@ limitations under the License.
 package gnxi
 
 import (
-	"crypto/tls"
-	"fmt"
-	"net"
 	"ovs-gnxi/shared"
+	"ovs-gnxi/shared/gnmi/modeldata"
 	"ovs-gnxi/shared/gnmi/modeldata/generated/ocstruct"
 	"ovs-gnxi/shared/logging"
-	"ovs-gnxi/target/gnxi/gnmi"
+	"ovs-gnxi/target/gnxi/service"
+	"ovs-gnxi/target/gnxi/service/gnmi"
 	"ovs-gnxi/target/ovs"
-	"sync"
-
-	"ovs-gnxi/shared/gnmi/modeldata"
-	"ovs-gnxi/target/gnxi/gnoi"
 	"reflect"
 )
 
@@ -38,9 +33,6 @@ const (
 	keyPATH       = "certs/target.key"
 	adminUsername = "admin"
 	adminPassword = "testpassword"
-	gnxiProtocol  = "tcp"
-	portGNMI      = "10161"
-	portGNOI      = "10162"
 )
 
 var log = logging.New("ovs-gnxi")
@@ -48,10 +40,9 @@ var log = logging.New("ovs-gnxi")
 // Server struct maintains the data structure for device config and implements the interface of gnxi server. It supports Capabilities, Get, and Set APIs.
 type Server struct {
 	Auth              *shared.Authenticator
-	certs             *shared.ServerCertificates
+	Certs             *shared.ServerCertificates
 	SystemBroker      *ovs.SystemBroker
-	serviceGNMI       *gnmi.Service
-	serviceGNOI       *gnoi.Service
+	Service           *service.Service
 	certificateChange chan struct{}
 }
 
@@ -66,21 +57,23 @@ func NewServer() (*Server, error) {
 		return nil, err
 	}
 
-	s := &Server{Auth: auth, certs: certs}
-	s.SystemBroker = ovs.NewSystemBroker(s.serviceGNMI, s.serviceGNOI, s.certs)
+	s := &Server{Auth: auth, Certs: certs}
+	s.SystemBroker = ovs.NewSystemBroker(s.Service, s.Certs)
 
 	return s, nil
 }
 
-func (s *Server) InitializeServices() {
-	s.serviceGNMI = s.createGNMIService()
-	s.serviceGNOI = s.CreateGNOIService()
-	s.SystemBroker.ServiceGNMI = s.serviceGNMI
-	s.SystemBroker.ServiceGNOI = s.serviceGNOI
+func (s *Server) InitializeService() {
+	s.Service = s.createService()
+	s.SystemBroker.GNXIService = s.Service
 }
 
-func (s *Server) createGNMIService() *gnmi.Service {
+func (s *Server) createService() *service.Service {
+	log.Error("HAHAHAHHAHAA")
+
 	<-s.SystemBroker.OVSClient.Config.Initialized
+
+	log.Error("LOLOLOLOL")
 
 	model := gnmi.NewModel(modeldata.ModelData,
 		reflect.TypeOf((*ocstruct.Device)(nil)),
@@ -98,69 +91,10 @@ func (s *Server) createGNMIService() *gnmi.Service {
 	log.Debugf("Using following initial config data: %s", config)
 
 	s.SystemBroker.OVSClient.Config.OverwriteCallback(s.SystemBroker.OVSConfigChangeCallback)
-	c, err := gnmi.NewService(s.Auth, model, []byte(config), s.SystemBroker.GNMIConfigSetupCallback, s.SystemBroker.GNMIConfigChangeCallback)
+	c, err := service.NewService(s.Auth, model, s.Certs, []byte(config), s.SystemBroker.GNMIConfigSetupCallback, s.SystemBroker.GNMIConfigChangeCallback, s.SystemBroker.GNOIRebootCallback, s.SystemBroker.GNOIRotateCertificatesCallback)
 	if err != nil {
 		log.Fatalf("Error on creating gNMI service: %v", err)
 	}
 
 	return c
 }
-
-func (s *Server) CreateGNOIService() *gnoi.Service {
-	c, err := gnoi.NewService(s.Auth, &s.certs.Certificate, s.SystemBroker.GNOIRebootCallback, s.SystemBroker.GNOIRotateCertificatesCallback)
-	if err != nil {
-		log.Fatalf("Error on creating gNOI service: %v", err)
-	}
-
-	return c
-}
-
-func (s *Server) RunGNMIService(wg *sync.WaitGroup) {
-	defer wg.Done()
-
-	g, err := s.serviceGNMI.PrepareServer([]tls.Certificate{s.certs.Certificate}, s.certs.CertPool)
-	if err != nil {
-		log.Fatalf("Failed to prepare gNMI server: %v", err)
-	}
-
-	s.serviceGNMI.RegisterService(g)
-
-	log.Infof("Starting to listen")
-	listen, err := net.Listen(gnxiProtocol, fmt.Sprintf(":%s", portGNMI))
-	if err != nil {
-		log.Fatalf("Failed to listen: %v", err)
-	}
-
-	log.Info("Starting to serve gNMI")
-	if err := g.Serve(listen); err != nil {
-		log.Fatalf("Failed to serve: %v", err)
-	}
-
-	log.Error("GNMI Server exit")
-}
-
-func (s *Server) RunGNOIService(wg *sync.WaitGroup) {
-	defer wg.Done()
-
-	g, err := s.serviceGNOI.PrepareServer([]tls.Certificate{s.certs.Certificate}, s.certs.CertPool)
-	if err != nil {
-		log.Fatalf("Failed to prepare gNMI server: %v", err)
-	}
-
-	s.serviceGNOI.RegisterService(g)
-
-	log.Infof("Starting to listen")
-	listen, err := net.Listen(gnxiProtocol, fmt.Sprintf(":%s", portGNOI))
-	if err != nil {
-		log.Fatalf("Failed to listen: %v", err)
-	}
-
-	log.Info("Starting to serve gNOI")
-	if err := g.Serve(listen); err != nil {
-		log.Fatalf("Failed to serve: %v", err)
-	}
-
-	log.Error("GNMI Server exit")
-}
-
-// TODO(dherkel@google.com): Implement Certificate Rotation Channel Receiver

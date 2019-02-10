@@ -170,8 +170,8 @@ func (c *Config) getControllerByUUID(uuid string) *OpenFlowController {
 	return nil
 }
 
-func NewConfig(callback ConfigCallback) *Config {
-	c := &Config{rawCache: make(map[string]map[string]libovsdb.Row), callback: callback, Initialized: make(chan struct{}),
+func NewConfig() *Config {
+	c := &Config{rawCache: make(map[string]map[string]libovsdb.Row), Initialized: make(chan struct{}),
 		ObjCache: &ObjectCache{System: &System{}, Controllers: make(map[string]*OpenFlowController), Interfaces: make(map[string]*Interface)}}
 	return c
 }

@@ -38,27 +38,27 @@ type GoStructEnumData map[string]map[int64]ygot.EnumDefinition
 
 // Model contains the model data and GoStruct information for the device to config.
 type Model struct {
-	modelData       []*pb.ModelData
-	structRootType  reflect.Type
-	schemaTreeRoot  *yang.Entry
-	jsonUnmarshaler JSONUnmarshaler
-	enumData        GoStructEnumData
+	ModelData       []*pb.ModelData
+	StructRootType  reflect.Type
+	SchemaTreeRoot  *yang.Entry
+	JSONUnmarshaler JSONUnmarshaler
+	EnumData        GoStructEnumData
 }
 
 // NewModel returns an instance of Model struct.
 func NewModel(m []*pb.ModelData, t reflect.Type, r *yang.Entry, f JSONUnmarshaler, e GoStructEnumData) *Model {
 	return &Model{
-		modelData:       m,
-		structRootType:  t,
-		schemaTreeRoot:  r,
-		jsonUnmarshaler: f,
-		enumData:        e,
+		ModelData:       m,
+		StructRootType:  t,
+		SchemaTreeRoot:  r,
+		JSONUnmarshaler: f,
+		EnumData:        e,
 	}
 }
 
 // NewConfigStruct creates a ValidatedGoStruct of this model from jsonConfig. If jsonConfig is nil, creates an empty GoStruct.
 func (m *Model) NewConfigStruct(jsonConfig []byte) (ygot.ValidatedGoStruct, error) {
-	rootNode, stat := ygotutils.NewNode(m.structRootType, &pb.Path{})
+	rootNode, stat := ygotutils.NewNode(m.StructRootType, &pb.Path{})
 	if stat.GetCode() != int32(cpb.Code_OK) {
 		return nil, fmt.Errorf("cannot create root node: %v", stat)
 	}
@@ -68,7 +68,7 @@ func (m *Model) NewConfigStruct(jsonConfig []byte) (ygot.ValidatedGoStruct, erro
 		return nil, errors.New("root node is not a ygot.ValidatedGoStruct")
 	}
 	if jsonConfig != nil {
-		if err := m.jsonUnmarshaler(jsonConfig, rootStruct); err != nil {
+		if err := m.JSONUnmarshaler(jsonConfig, rootStruct); err != nil {
 			return nil, err
 		}
 		if err := rootStruct.Validate(); err != nil {
@@ -80,8 +80,8 @@ func (m *Model) NewConfigStruct(jsonConfig []byte) (ygot.ValidatedGoStruct, erro
 
 // SupportedModels returns a list of supported models.
 func (m *Model) SupportedModels() []string {
-	mDesc := make([]string, len(m.modelData))
-	for i, m := range m.modelData {
+	mDesc := make([]string, len(m.ModelData))
+	for i, m := range m.ModelData {
 		mDesc[i] = fmt.Sprintf("%s %s", m.Name, m.Version)
 	}
 	sort.Strings(mDesc)

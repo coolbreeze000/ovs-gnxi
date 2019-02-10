@@ -23,15 +23,10 @@ import (
 	"os"
 	"ovs-gnxi/shared/logging"
 	"ovs-gnxi/target/gnxi"
-	"sync"
+	"ovs-gnxi/target/watchdog"
 )
 
 var log = logging.New("ovs-gnxi")
-
-func RunPrometheus(instance *PrometheusMonitoringInstance) {
-	instance.StartPrometheus()
-	log.Error("Prometheus exit")
-}
 
 func main() {
 	defer os.Exit(0)
@@ -39,14 +34,13 @@ func main() {
 
 	log.Info("Starting Open vSwitch gNXI interface\n")
 
-	var wg sync.WaitGroup
-	wg.Add(3)
-
 	prometheusInstance, err := NewPrometheusMonitoringInstance("0.0.0.0", "8080")
 	if err != nil {
 		log.Errorf("Unable to configure Prometheus Monitoring: %v", err)
 		os.Exit(1)
 	}
+
+	go RunPrometheus(prometheusInstance)
 
 	gNXIServer, err := gnxi.NewServer()
 	if err != nil {
@@ -54,19 +48,8 @@ func main() {
 		os.Exit(1)
 	}
 
-	log.Info(gNXIServer)
-
-	go RunPrometheus(prometheusInstance)
-
-	go gNXIServer.SystemBroker.RunOVSClient(&wg)
-
-	gNXIServer.InitializeServices()
-
-	go gNXIServer.RunGNMIService(&wg)
-
-	go gNXIServer.RunGNOIService(&wg)
-
-	wg.Wait()
+	wd := watchdog.NewWatchdog(gNXIServer)
+	wd.RunServices()
 }
 
 type PrometheusMonitoringInstance struct {
@@ -98,4 +81,9 @@ func (p *PrometheusMonitoringInstance) StartPrometheus() {
 	log.Infof("Starting prometheus on %v:%v...", p.IPAddress, p.Port)
 	http.Handle("/metrics", promhttp.Handler())
 	log.Fatal(http.ListenAndServe(fmt.Sprintf("%v:%v", p.IPAddress, p.Port), nil))
+}
+
+func RunPrometheus(instance *PrometheusMonitoringInstance) {
+	instance.StartPrometheus()
+	log.Error("Prometheus exit")
 }

@@ -20,11 +20,8 @@ import (
 	"os"
 	"ovs-gnxi/shared"
 	oc "ovs-gnxi/shared/gnmi/modeldata/generated/ocstruct"
-	"ovs-gnxi/target/gnxi/gnmi"
-	"ovs-gnxi/target/gnxi/gnoi"
+	gnxi "ovs-gnxi/target/gnxi/service"
 	"strings"
-
-	"sync"
 )
 
 const (
@@ -34,24 +31,35 @@ const (
 )
 
 type SystemBroker struct {
-	ServiceGNMI *gnmi.Service
-	ServiceGNOI *gnoi.Service
-	OVSClient   *Client
+	certs                *shared.ServerCertificates
+	GNXIService          *gnxi.Service
+	OVSClient            *Client
+	startOVSClientChan   chan bool
+	startGNXIServiceChan chan bool
+	stopOVSClientChan    chan bool
+	stopGNXIServiceChan  chan bool
 }
 
-func NewSystemBroker(serviceGNMI *gnmi.Service, ServiceGNOI *gnoi.Service, certs *shared.ServerCertificates) *SystemBroker {
+func NewSystemBroker(gnxiService *gnxi.Service, certs *shared.ServerCertificates) *SystemBroker {
 	var err error
-	s := &SystemBroker{ServiceGNMI: serviceGNMI, ServiceGNOI: ServiceGNOI}
+	s := &SystemBroker{GNXIService: gnxiService, certs: certs}
 
 	log.Info("Initializing OVS Client...")
 
-	s.OVSClient, err = NewClient(ovsAddress, ovsProtocol, ovsPort, certs.KeySystemPath, certs.CertSystemPath, certs.CASystemPath, NewConfig(nil))
+	s.OVSClient, err = NewClient(ovsAddress, ovsProtocol, ovsPort)
 	if err != nil {
 		log.Errorf("Unable to initialize OVS Client: %v", err)
 		os.Exit(1)
 	}
 
 	return s
+}
+
+func (s *SystemBroker) RegisterWatchdogChannels(startOVSClientChan, startGNXIServiceChan, stopOVSClientChan, stopGNXIServiceChan chan bool) {
+	s.startOVSClientChan = startOVSClientChan
+	s.startGNXIServiceChan = startGNXIServiceChan
+	s.stopOVSClientChan = stopOVSClientChan
+	s.stopGNXIServiceChan = stopGNXIServiceChan
 }
 
 func (s *SystemBroker) GenerateConfig(config *Config) ([]byte, error) {
@@ -155,11 +163,11 @@ func (s *SystemBroker) OVSConfigChangeCallback(ovsConfig *Config) error {
 		return err
 	}
 
-	if s.ServiceGNMI != nil {
-		s.ServiceGNMI.OverwriteConfig(gnmiConfig)
+	if s.GNXIService != nil {
+		s.GNXIService.OverwriteConfig(gnmiConfig)
 
 		select {
-		case s.ServiceGNMI.ConfigUpdate <- true: // Send Config Update Notification, unless one already pending.
+		case s.GNXIService.ConfigUpdate <- true: // Send Config Update Notification, unless one already pending.
 		default:
 		}
 
@@ -215,22 +223,21 @@ func (s *SystemBroker) GNMIConfigChangeCallback(new ygot.ValidatedGoStruct) erro
 
 func (s *SystemBroker) GNOIRebootCallback() error {
 	log.Debug("Received OVS reboot request by GNOI target")
+	s.OVSClient.StopMonitoring()
 	err := s.OVSClient.RestartSystem()
 	if err != nil {
 		log.Errorf("unable to reboot OVS system: %v", err)
 		return err
 	}
 
+	s.stopOVSClientChan <- true
+	s.startOVSClientChan <- true
+	s.stopGNXIServiceChan <- true
+	s.startGNXIServiceChan <- true
+
 	return nil
 }
 
 func (s *SystemBroker) GNOIRotateCertificatesCallback(certs *shared.ServerCertificates) error {
 	return nil
-}
-
-func (s *SystemBroker) RunOVSClient(wg *sync.WaitGroup) {
-	defer s.OVSClient.Connection.Disconnect()
-	defer wg.Done()
-	s.OVSClient.StartMonitorAll()
-	log.Error("OVS Client exit")
 }

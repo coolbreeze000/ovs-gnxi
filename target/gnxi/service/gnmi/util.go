@@ -24,10 +24,10 @@ import (
 	pb "github.com/openconfig/gnmi/proto/gnmi"
 )
 
-// getChildNode gets a node's child with corresponding schema specified by path
+// GetChildNode gets a node's child with corresponding schema specified by path
 // element. If not found and createIfNotExist is set as true, an empty node is
 // created and returned.
-func getChildNode(node map[string]interface{}, schema *yang.Entry, elem *pb.PathElem, createIfNotExist bool) (interface{}, *yang.Entry) {
+func GetChildNode(node map[string]interface{}, schema *yang.Entry, elem *pb.PathElem, createIfNotExist bool) (interface{}, *yang.Entry) {
 	var nextSchema *yang.Entry
 	var ok bool
 
@@ -46,14 +46,14 @@ func getChildNode(node map[string]interface{}, schema *yang.Entry, elem *pb.Path
 		return nextNode, nextSchema
 	}
 
-	nextNode = getKeyedListEntry(node, elem, createIfNotExist)
+	nextNode = GetKeyedListEntry(node, elem, createIfNotExist)
 	return nextNode, nextSchema
 }
 
-// getKeyedListEntry finds the keyed list entry in node by the name and key of
+// GetKeyedListEntry finds the keyed list entry in node by the name and key of
 // path elem. If entry is not found and createIfNotExist is true, an empty entry
 // will be created (the list will be created if necessary).
-func getKeyedListEntry(node map[string]interface{}, elem *pb.PathElem, createIfNotExist bool) map[string]interface{} {
+func GetKeyedListEntry(node map[string]interface{}, elem *pb.PathElem, createIfNotExist bool) map[string]interface{} {
 	curNode, ok := node[elem.Name]
 	if !ok {
 		if !createIfNotExist {
@@ -80,7 +80,6 @@ func getKeyedListEntry(node map[string]interface{}, elem *pb.PathElem, createIfN
 	for _, n := range keyedList {
 		m, ok := n.(map[string]interface{})
 		if !ok {
-			log.Errorf("wrong keyed list entry type: %T", n)
 			return nil
 		}
 		keyMatching := true
