@@ -69,11 +69,7 @@ func (s *Server) InitializeService() {
 }
 
 func (s *Server) createService() *service.Service {
-	log.Error("HAHAHAHHAHAA")
-
 	<-s.SystemBroker.OVSClient.Config.Initialized
-
-	log.Error("LOLOLOLOL")
 
 	model := gnmi.NewModel(modeldata.ModelData,
 		reflect.TypeOf((*ocstruct.Device)(nil)),

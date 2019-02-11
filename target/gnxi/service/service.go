@@ -114,8 +114,6 @@ func NewService(auth *shared.Authenticator, model *gnmi.Model, certs *shared.Ser
 		},
 	}
 
-	s.prepareService([]tls.Certificate{s.certs.Certificate}, s.certs.CertPool)
-
 	if config != nil && s.ch.CallbackSetup != nil {
 		if err := s.ch.CallbackSetup(rootStruct); err != nil {
 			return nil, err
@@ -123,6 +121,14 @@ func NewService(auth *shared.Authenticator, model *gnmi.Model, certs *shared.Ser
 	}
 
 	return s, nil
+}
+
+func (s *Service) LockService() {
+	s.mu.Lock()
+}
+
+func (s *Service) UnlockService() {
+	s.mu.Unlock()
 }
 
 // checkEncodingAndModel checks whether encoding and models are supported by the server. Return error if anything is unsupported.
@@ -908,11 +914,11 @@ func (s *Service) Reboot(ctx context.Context, req *pbs.RebootRequest) (*pbs.Rebo
 	}
 	log.Infof("allowed a Reboot request")
 
-	if err := s.ch.CallbackReboot(); err != nil {
-		return nil, err
-	}
+	s.mu.Lock()
 
-	defer s.RestartService()
+	go s.ch.CallbackReboot()
+
+	defer s.mu.Unlock()
 
 	resp := &pbs.RebootResponse{}
 
@@ -1020,14 +1026,10 @@ func (s *Service) registerService() {
 	reflection.Register(s.g)
 }
 
-func (s *Service) RestartService() {
-	s.StopService()
-	s.prepareService([]tls.Certificate{s.certs.Certificate}, s.certs.CertPool)
-	s.StartService()
-}
-
 func (s *Service) StartService() {
 	log.Info("Start gNXI Service")
+
+	s.prepareService([]tls.Certificate{s.certs.Certificate}, s.certs.CertPool)
 
 	var err error
 
@@ -1041,14 +1043,11 @@ func (s *Service) StartService() {
 	if err := s.g.Serve(s.socket); err != nil {
 		log.Fatalf("Failed to serve: %v", err)
 	}
-
-	log.Info("Stop gNXI Service")
 }
 
 func (s *Service) StopService() {
-	time.Sleep(2 * time.Second)
+	log.Info("Stop gNXI Service")
 	s.g.Stop()
-	time.Sleep(2 * time.Second)
 	/*
 		if err := s.socket.Close(); err != nil {
 			log.Fatalf("Failed to close socket: %v", err)

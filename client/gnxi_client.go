@@ -17,11 +17,11 @@ package main
 
 import (
 	"flag"
-	"fmt"
 	"github.com/google/gnxi/utils"
 	"github.com/google/gnxi/utils/entity"
 	"github.com/google/go-cmp/cmp"
 	pb "github.com/openconfig/gnmi/proto/gnmi"
+	"net"
 	"os"
 	"ovs-gnxi/client/gnmi"
 	"ovs-gnxi/client/gnoi"
@@ -118,8 +118,8 @@ func main() {
 
 	log.Info("Started Open vSwitch gNXI client tester\n")
 
-	gnmiTarget := fmt.Sprintf("%s:%s", *targetAddr, *targetGNMIPort)
-	gnoiTarget := fmt.Sprintf("%s:%s", *targetAddr, *targetGNOIPort)
+	gnmiTarget := net.JoinHostPort(*targetAddr, *targetGNMIPort)
+	gnoiTarget := net.JoinHostPort(*targetAddr, *targetGNOIPort)
 
 	gnmiClient := gnmi.NewClient(gnmiTarget, *targetName, *encodingName)
 	gnoiClient := gnoi.NewClient(gnoiTarget, *targetName, *encodingName, loadCAEntity(caCert, caKey))
@@ -196,7 +196,9 @@ func main() {
 		}
 	default:
 		RunGNMICapabilitiesTests(gnmiClient)
+		RunGNMIGetTests(gnmiClient)
 		RunGNOIRebootTests(gnoiClient)
+		//RunGNMIGetTests(gnmiClient)
 		//RunGNOIGetCertificatesTests(gnoiClient)
 		//RunGNOIRotateCertificatesTests(gnoiClient)
 		RunGNMIGetTests(gnmiClient)
@@ -544,7 +546,21 @@ func RunGNOIRebootTests(c *gnoi.Client) {
 			log.Fatal(err)
 		}
 
-		log.Error(resp)
+		if resp == nil {
+			log.Errorf("Unexpected GNOI Reboot response")
+		}
+
+		for {
+			conn, _ := net.DialTimeout("tcp", net.JoinHostPort(*targetAddr, *targetGNOIPort), *timeOut)
+			if conn != nil {
+				conn.Close()
+				log.Info("Successfully verified that target device is back up")
+				time.Sleep(10 * time.Second)
+				break
+			}
+		}
+
+		log.Infof("Successfully verified GNOI Reboot(%v)", td.Desc)
 	}
 }
 

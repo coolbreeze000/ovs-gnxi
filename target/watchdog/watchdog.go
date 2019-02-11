@@ -23,13 +23,9 @@ func NewWatchdog(gnxiServer *gnxi.Server) *Watchdog {
 }
 
 func (w *Watchdog) RunServices() {
-	log.Error("TEEEST1")
 	w.runOVSClientService()
-	log.Error("TEEEST2")
 	w.gnxiServer.InitializeService()
-	log.Error("TEEEST3")
 	w.runGNXIService()
-	log.Error("TEEEST4")
 
 	for {
 		select {

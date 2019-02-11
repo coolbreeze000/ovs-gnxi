@@ -222,6 +222,8 @@ func (s *SystemBroker) GNMIConfigChangeCallback(new ygot.ValidatedGoStruct) erro
 }
 
 func (s *SystemBroker) GNOIRebootCallback() error {
+	s.GNXIService.LockService()
+
 	log.Debug("Received OVS reboot request by GNOI target")
 	s.OVSClient.StopMonitoring()
 	err := s.OVSClient.RestartSystem()
@@ -234,6 +236,8 @@ func (s *SystemBroker) GNOIRebootCallback() error {
 	s.startOVSClientChan <- true
 	s.stopGNXIServiceChan <- true
 	s.startGNXIServiceChan <- true
+
+	defer s.GNXIService.UnlockService()
 
 	return nil
 }

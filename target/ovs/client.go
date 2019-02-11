@@ -59,7 +59,7 @@ func NewClient(address, protocol, port string) (*Client, error) {
 }
 
 func (o *Client) StartClient(privateKeyPath, publicKeyPath, caPath string) {
-	log.Info("OVS Client start")
+	log.Info("Start OVS Client")
 
 	var err error
 	o.Connection, err = libovsdb.ConnectUsingProtocolWithTLS(o.Protocol, fmt.Sprintf("%v:%v", o.Address, o.Port), privateKeyPath, publicKeyPath, caPath)
@@ -76,7 +76,7 @@ func (o *Client) StopMonitoring() {
 }
 
 func (o *Client) StopClient() {
-	log.Info("OVS Client exit")
+	log.Info("Stop OVS Client")
 	o.Connection.Disconnect()
 	o.Config = NewConfig()
 }
