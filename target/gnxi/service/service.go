@@ -68,7 +68,7 @@ type ConfigSetupCallback func(ygot.ValidatedGoStruct) error
 type ConfigChangeCallback func(ygot.ValidatedGoStruct) error
 
 type RebootCallback func() error
-type RotateCertificatesCallback func(certificates *shared.ServerCertificates) error
+type RotateCertificatesCallback func(certificates *shared.TargetCertificates) error
 
 type CallbackHandler struct {
 	CallbackSetup       ConfigSetupCallback
@@ -81,7 +81,7 @@ type CallbackHandler struct {
 type Service struct {
 	g            *grpc.Server
 	socket       net.Listener
-	certs        *shared.ServerCertificates
+	certs        *shared.TargetCertificates
 	auth         *shared.Authenticator
 	model        *gnmi.Model
 	config       ygot.ValidatedGoStruct
@@ -93,7 +93,7 @@ type Service struct {
 }
 
 // NewService creates an instance of Service with given json config.
-func NewService(auth *shared.Authenticator, model *gnmi.Model, certs *shared.ServerCertificates, config []byte,
+func NewService(auth *shared.Authenticator, model *gnmi.Model, certs *shared.TargetCertificates, config []byte,
 	callbackSetup ConfigSetupCallback, callbackChange ConfigChangeCallback, callbackReboot RebootCallback, callbackRotateCerts RotateCertificatesCallback) (*Service, error) {
 	rootStruct, err := model.NewConfigStruct(config)
 
@@ -1029,7 +1029,7 @@ func (s *Service) registerService() {
 func (s *Service) StartService() {
 	log.Info("Start gNXI Service")
 
-	s.prepareService([]tls.Certificate{s.certs.Certificate}, s.certs.CertPool)
+	s.prepareService(s.certs.TLSCertificates, s.certs.CertPool)
 
 	var err error
 
@@ -1048,8 +1048,4 @@ func (s *Service) StartService() {
 func (s *Service) StopService() {
 	log.Info("Stop gNXI Service")
 	s.g.Stop()
-	/*
-		if err := s.socket.Close(); err != nil {
-			log.Fatalf("Failed to close socket: %v", err)
-		}*/
 }

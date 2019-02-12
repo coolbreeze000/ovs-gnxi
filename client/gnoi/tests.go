@@ -9,9 +9,13 @@ var RebootTests = []struct {
 }}
 
 var GetCertificatesTests = []struct {
-	Desc string
+	Desc        string
+	ExpCertID   string
+	ExpCertPath string
 }{{
-	Desc: "get certificates",
+	Desc:        "get certificates",
+	ExpCertID:   "c5e5a1cb-8e1f-43c1-be4a-ab8e513fc667",
+	ExpCertPath: "certs/target.crt",
 }}
 
 var RotateCertificatesTests = []struct {

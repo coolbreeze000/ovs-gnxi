@@ -25,6 +25,7 @@ import (
 	"os"
 	"ovs-gnxi/client/gnmi"
 	"ovs-gnxi/client/gnoi"
+	"ovs-gnxi/shared"
 	"ovs-gnxi/shared/logging"
 	"ovs-gnxi/target/ovs"
 	"strings"
@@ -198,8 +199,8 @@ func main() {
 		RunGNMICapabilitiesTests(gnmiClient)
 		RunGNMIGetTests(gnmiClient)
 		RunGNOIRebootTests(gnoiClient)
-		//RunGNMIGetTests(gnmiClient)
-		//RunGNOIGetCertificatesTests(gnoiClient)
+		RunGNMIGetTests(gnmiClient)
+		RunGNOIGetCertificatesTests(gnoiClient)
 		//RunGNOIRotateCertificatesTests(gnoiClient)
 		RunGNMIGetTests(gnmiClient)
 		RunGNMISetTests(gnmiClient)
@@ -576,7 +577,16 @@ func RunGNOIGetCertificatesTests(c *gnoi.Client) {
 			log.Fatal(err)
 		}
 
-		log.Error(resp)
+		certs, err := shared.LoadCertificatesFromFile(td.ExpCertPath)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		if string(resp[td.ExpCertID].Signature) == string(certs[0].Signature) {
+			log.Errorf("GetCertificates(%v): expected %v, actual %v", td.Desc, certs[0].Signature, resp[td.ExpCertID].Signature)
+		} else {
+			log.Errorf("Unexpected GNOI Reboot response")
+		}
 	}
 }
 

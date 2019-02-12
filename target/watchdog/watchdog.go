@@ -34,6 +34,7 @@ func (w *Watchdog) RunServices() {
 		case _ = <-w.stopOVSClientChan:
 			w.gnxiServer.SystemBroker.OVSClient.StopClient()
 		case _ = <-w.startGNXIServiceChan:
+			w.gnxiServer.InitializeService()
 			w.runGNXIService()
 		case _ = <-w.stopGNXIServiceChan:
 			w.gnxiServer.Service.StopService()

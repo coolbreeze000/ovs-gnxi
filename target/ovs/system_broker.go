@@ -31,7 +31,7 @@ const (
 )
 
 type SystemBroker struct {
-	certs                *shared.ServerCertificates
+	certs                *shared.TargetCertificates
 	GNXIService          *gnxi.Service
 	OVSClient            *Client
 	startOVSClientChan   chan bool
@@ -40,7 +40,7 @@ type SystemBroker struct {
 	stopGNXIServiceChan  chan bool
 }
 
-func NewSystemBroker(gnxiService *gnxi.Service, certs *shared.ServerCertificates) *SystemBroker {
+func NewSystemBroker(gnxiService *gnxi.Service, certs *shared.TargetCertificates) *SystemBroker {
 	var err error
 	s := &SystemBroker{GNXIService: gnxiService, certs: certs}
 
@@ -242,6 +242,6 @@ func (s *SystemBroker) GNOIRebootCallback() error {
 	return nil
 }
 
-func (s *SystemBroker) GNOIRotateCertificatesCallback(certs *shared.ServerCertificates) error {
+func (s *SystemBroker) GNOIRotateCertificatesCallback(certs *shared.TargetCertificates) error {
 	return nil
 }

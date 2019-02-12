@@ -213,6 +213,7 @@ func (c *Client) GetCertificates(ctx context.Context) (map[string]*x509.Certific
 	if err != nil {
 		return nil, err
 	}
+
 	certs := map[string]*x509.Certificate{}
 	for _, certInfo := range resp.CertificateInfo {
 		if certInfo.Certificate == nil {

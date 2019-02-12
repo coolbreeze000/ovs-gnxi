@@ -33,6 +33,7 @@ const (
 	keyPATH       = "certs/target.key"
 	adminUsername = "admin"
 	adminPassword = "testpassword"
+	defaultCertID = "c5e5a1cb-8e1f-43c1-be4a-ab8e513fc667"
 )
 
 var log = logging.New("ovs-gnxi")
@@ -40,7 +41,7 @@ var log = logging.New("ovs-gnxi")
 // Server struct maintains the data structure for device config and implements the interface of gnxi server. It supports Capabilities, Get, and Set APIs.
 type Server struct {
 	Auth              *shared.Authenticator
-	Certs             *shared.ServerCertificates
+	Certs             *shared.TargetCertificates
 	SystemBroker      *ovs.SystemBroker
 	Service           *service.Service
 	certificateChange chan struct{}
@@ -52,7 +53,7 @@ func NewServer() (*Server, error) {
 
 	auth := shared.NewAuthenticator(adminUsername, adminPassword)
 
-	certs, err := shared.NewServerCertificates(caPATH, certPATH, keyPATH)
+	certs, err := shared.NewServerCertificates(defaultCertID, caPATH, certPATH, keyPATH)
 	if err != nil {
 		return nil, err
 	}
