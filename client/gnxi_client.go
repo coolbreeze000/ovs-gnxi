@@ -16,6 +16,7 @@ limitations under the License.
 package main
 
 import (
+	"bytes"
 	"flag"
 	"github.com/google/gnxi/utils"
 	"github.com/google/gnxi/utils/entity"
@@ -582,10 +583,10 @@ func RunGNOIGetCertificatesTests(c *gnoi.Client) {
 			log.Fatal(err)
 		}
 
-		if string(resp[td.ExpCertID].Signature) == string(certs[0].Signature) {
-			log.Errorf("GetCertificates(%v): expected %v, actual %v", td.Desc, certs[0].Signature, resp[td.ExpCertID].Signature)
+		if bytes.Compare(resp[td.ExpCertID].Signature, certs[0].Signature) == 0 {
+			log.Infof("Successfully verified GNOI GetCertificates(%v)", td.Desc)
 		} else {
-			log.Errorf("Unexpected GNOI Reboot response")
+			log.Errorf("GetCertificates(%v): expected %v, actual %v", td.Desc, string(certs[0].Signature), string(resp[td.ExpCertID].Signature))
 		}
 	}
 }

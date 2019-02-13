@@ -67,7 +67,5 @@ services:
        ovsgnxi_default:
           aliases:
             - client.gnxi.lan
-    depends_on:
-      - target
 networks:
   ovsgnxi_default:
