@@ -202,7 +202,7 @@ func main() {
 		RunGNOIRebootTests(gnoiClient)
 		RunGNMIGetTests(gnmiClient)
 		RunGNOIGetCertificatesTests(gnoiClient)
-		//RunGNOIRotateCertificatesTests(gnoiClient)
+		RunGNOIRotateCertificatesTests(gnoiClient)
 		RunGNMIGetTests(gnmiClient)
 		RunGNMISetTests(gnmiClient)
 		RunGNMISubscribeOnceTests(gnmiClient)

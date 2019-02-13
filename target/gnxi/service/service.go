@@ -19,8 +19,10 @@ package service
 import (
 	"bytes"
 	"compress/gzip"
+	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/json"
 	"fmt"
 	"google.golang.org/grpc"
@@ -973,9 +975,100 @@ func (s *Service) Rotate(stream pbc.CertificateManagement_RotateServer) error {
 		return err
 	}
 
-	errChan := make(chan error)
+	genCSRRequest := req.GetGenerateCsr()
+	if genCSRRequest == nil {
+		return fmt.Errorf("expected GenerateCSRRequest, got something else")
+	}
 
-	return <-errChan
+	if genCSRRequest.CsrParams.Type != pbc.CertificateType_CT_X509 {
+		return fmt.Errorf("certificate type %q not supported", genCSRRequest.CsrParams.Type)
+	}
+	if genCSRRequest.CsrParams.KeyType != pbc.KeyType_KT_RSA {
+		return fmt.Errorf("key type %q not supported", genCSRRequest.CsrParams.KeyType)
+	}
+	subject := pkix.Name{
+		Country:            []string{genCSRRequest.CsrParams.Country},
+		Organization:       []string{genCSRRequest.CsrParams.Organization},
+		OrganizationalUnit: []string{genCSRRequest.CsrParams.OrganizationalUnit},
+		CommonName:         genCSRRequest.CsrParams.CommonName,
+	}
+
+	template := &x509.CertificateRequest{
+		Subject:            subject,
+		SignatureAlgorithm: x509.SHA256WithRSA,
+	}
+
+	privateKey, err := shared.GeneratePrivateKey(shared.KeySize)
+
+	pemCSR, err := shared.CreateCSR(rand.Reader, template, privateKey)
+	if err != nil {
+		return fmt.Errorf("failed to create CSR: %v", err)
+	}
+
+	if err = stream.Send(&pbc.RotateCertificateResponse{
+		RotateResponse: &pbc.RotateCertificateResponse_GeneratedCsr{
+			GeneratedCsr: &pbc.GenerateCSRResponse{Csr: &pbc.CSR{
+				Type: pbc.CertificateType_CT_X509,
+				Csr:  pemCSR,
+			}},
+		},
+	}); err != nil {
+		return fmt.Errorf("failed to send GenerateCSRResponse: %v", err)
+	}
+
+	if req, err = stream.Recv(); err != nil {
+		return fmt.Errorf("failed to receive RotateCertificateRequest: %v", err)
+	}
+	loadCertificateRequest := req.GetLoadCertificate()
+	if loadCertificateRequest == nil {
+		return fmt.Errorf("expected LoadCertificateRequest, got something else")
+	}
+
+	if loadCertificateRequest.Certificate.Type != pbc.CertificateType_CT_X509 {
+		return fmt.Errorf("unexpected Certificate type: %d", loadCertificateRequest.Certificate.Type)
+	}
+
+	//certID := loadCertificateRequest.CertificateId
+	//pemCert := loadCertificateRequest.Certificate.Certificate
+	var pemCACerts [][]byte
+
+	for _, cert := range loadCertificateRequest.CaCertificates {
+		if cert.Type != pbc.CertificateType_CT_X509 {
+			return fmt.Errorf("unexpected Certificate type: %d", cert.Type)
+		}
+		pemCACerts = append(pemCACerts, cert.Certificate)
+	}
+
+	// Read/Write Certs
+
+	/*
+		if err = stream.Send(&pb.RotateCertificateResponse{
+			RotateResponse: &pb.RotateCertificateResponse_LoadCertificate{
+				LoadCertificate: &pb.LoadCertificateResponse{},
+			},
+		}); err != nil {
+			rerr := fmt.Errorf("failed to send LoadCertificateResponse: %v", err)
+			log.Error(rerr)
+			return rerr
+		}
+
+		if resp, err = stream.Recv(); err != nil {
+			rotateBack()
+			rerr := fmt.Errorf("rolling back - failed to receive RotateCertificateRequest: %v", err)
+			log.Error(rerr)
+			return rerr
+		}
+		finalize := resp.GetFinalizeRotation()
+		if finalize == nil {
+			rotateBack()
+			rerr := fmt.Errorf("expected FinalizeRequest, got something else")
+			log.Error(rerr)
+			return rerr
+		}
+		rotateAccept()
+	*/
+
+	return nil
 }
 
 func (s *Service) GetCertificates(ctx context.Context, req *pbc.GetCertificatesRequest) (*pbc.GetCertificatesResponse, error) {

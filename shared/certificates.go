@@ -1,10 +1,13 @@
 package shared
 
 import (
+	"crypto/rand"
+	"crypto/rsa"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/pem"
 	"fmt"
+	"io"
 	"io/ioutil"
 	pbc "ovs-gnxi/shared/gnoi/modeldata/generated/cert"
 	"ovs-gnxi/shared/logging"
@@ -12,6 +15,10 @@ import (
 )
 
 var log = logging.New("ovs-gnxi")
+
+const (
+	KeySize = 4096
+)
 
 type TargetCertificates struct {
 	CertificateID   string
@@ -98,4 +105,27 @@ func x509toPEM(cert *x509.Certificate) []byte {
 		Type:  "CERTIFICATE",
 		Bytes: cert.Raw,
 	})
+}
+
+func CreateCSR(rand io.Reader, template *x509.CertificateRequest, priv interface{}) ([]byte, error) {
+	der, err := x509.CreateCertificateRequest(rand, template, priv)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create CSR: %v", err)
+	}
+	return pem.EncodeToMemory(&pem.Block{
+		Type:  "CERTIFICATE REQUEST",
+		Bytes: der,
+	}), nil
+}
+
+func GeneratePrivateKey(size int) (*rsa.PrivateKey, error) {
+	priv, err := rsa.GenerateKey(rand.Reader, size)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate key")
+	}
+	if bits := priv.N.BitLen(); bits != size {
+		return nil, fmt.Errorf("key too short (%d vs %d)", bits, size)
+	}
+
+	return priv, nil
 }
