@@ -43,7 +43,7 @@ func (w *Watchdog) RunServices() {
 }
 
 func (w *Watchdog) runOVSClientService() {
-	go w.gnxiServer.SystemBroker.OVSClient.StartClient(w.gnxiServer.Certs.KeySystemPath, w.gnxiServer.Certs.CertSystemPath, w.gnxiServer.Certs.CASystemPath)
+	go w.gnxiServer.SystemBroker.OVSClient.StartClient(w.gnxiServer.CertManager.GetActivePackage().KeySystemPath, w.gnxiServer.CertManager.GetActivePackage().CertificateSystemPath, w.gnxiServer.CertManager.GetActivePackage().CASystemPath)
 }
 
 func (w *Watchdog) runGNXIService() {

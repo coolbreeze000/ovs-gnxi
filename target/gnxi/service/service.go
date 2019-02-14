@@ -19,10 +19,7 @@ package service
 import (
 	"bytes"
 	"compress/gzip"
-	"crypto/rand"
 	"crypto/tls"
-	"crypto/x509"
-	"crypto/x509/pkix"
 	"encoding/json"
 	"fmt"
 	"google.golang.org/grpc"
@@ -33,6 +30,7 @@ import (
 	"net"
 	"ovs-gnxi/shared"
 	"ovs-gnxi/shared/logging"
+	"ovs-gnxi/target/cert"
 	"reflect"
 	"strconv"
 	"sync"
@@ -70,7 +68,7 @@ type ConfigSetupCallback func(ygot.ValidatedGoStruct) error
 type ConfigChangeCallback func(ygot.ValidatedGoStruct) error
 
 type RebootCallback func() error
-type RotateCertificatesCallback func(certificates *shared.TargetCertificates) error
+type RotateCertificatesCallback func() error
 
 type CallbackHandler struct {
 	CallbackSetup       ConfigSetupCallback
@@ -83,7 +81,7 @@ type CallbackHandler struct {
 type Service struct {
 	g            *grpc.Server
 	socket       net.Listener
-	certs        *shared.TargetCertificates
+	certManager  *cert.Manager
 	auth         *shared.Authenticator
 	model        *gnmi.Model
 	config       ygot.ValidatedGoStruct
@@ -95,7 +93,7 @@ type Service struct {
 }
 
 // NewService creates an instance of Service with given json config.
-func NewService(auth *shared.Authenticator, model *gnmi.Model, certs *shared.TargetCertificates, config []byte,
+func NewService(auth *shared.Authenticator, model *gnmi.Model, certManager *cert.Manager, config []byte,
 	callbackSetup ConfigSetupCallback, callbackChange ConfigChangeCallback, callbackReboot RebootCallback, callbackRotateCerts RotateCertificatesCallback) (*Service, error) {
 	rootStruct, err := model.NewConfigStruct(config)
 
@@ -103,7 +101,7 @@ func NewService(auth *shared.Authenticator, model *gnmi.Model, certs *shared.Tar
 		return nil, err
 	}
 	s := &Service{
-		certs:        certs,
+		certManager:  certManager,
 		auth:         auth,
 		model:        model,
 		config:       rootStruct,
@@ -986,30 +984,21 @@ func (s *Service) Rotate(stream pbc.CertificateManagement_RotateServer) error {
 	if genCSRRequest.CsrParams.KeyType != pbc.KeyType_KT_RSA {
 		return fmt.Errorf("key type %q not supported", genCSRRequest.CsrParams.KeyType)
 	}
-	subject := pkix.Name{
-		Country:            []string{genCSRRequest.CsrParams.Country},
-		Organization:       []string{genCSRRequest.CsrParams.Organization},
-		OrganizationalUnit: []string{genCSRRequest.CsrParams.OrganizationalUnit},
-		CommonName:         genCSRRequest.CsrParams.CommonName,
-	}
 
-	template := &x509.CertificateRequest{
-		Subject:            subject,
-		SignatureAlgorithm: x509.SHA256WithRSA,
-	}
-
-	privateKey, err := shared.GeneratePrivateKey(shared.KeySize)
-
-	pemCSR, err := shared.CreateCSR(rand.Reader, template, privateKey)
+	tempPackage, err := s.certManager.InitializePackage()
 	if err != nil {
-		return fmt.Errorf("failed to create CSR: %v", err)
+		return err
+	}
+	csr, err := tempPackage.CreateCSR(genCSRRequest.CsrParams.Country, genCSRRequest.CsrParams.Organization, genCSRRequest.CsrParams.OrganizationalUnit, genCSRRequest.CsrParams.CommonName)
+	if err != nil {
+		return err
 	}
 
 	if err = stream.Send(&pbc.RotateCertificateResponse{
 		RotateResponse: &pbc.RotateCertificateResponse_GeneratedCsr{
 			GeneratedCsr: &pbc.GenerateCSRResponse{Csr: &pbc.CSR{
 				Type: pbc.CertificateType_CT_X509,
-				Csr:  pemCSR,
+				Csr:  csr,
 			}},
 		},
 	}); err != nil {
@@ -1041,32 +1030,23 @@ func (s *Service) Rotate(stream pbc.CertificateManagement_RotateServer) error {
 
 	// Read/Write Certs
 
-	/*
-		if err = stream.Send(&pb.RotateCertificateResponse{
-			RotateResponse: &pb.RotateCertificateResponse_LoadCertificate{
-				LoadCertificate: &pb.LoadCertificateResponse{},
-			},
-		}); err != nil {
-			rerr := fmt.Errorf("failed to send LoadCertificateResponse: %v", err)
-			log.Error(rerr)
-			return rerr
-		}
+	if err = stream.Send(&pbc.RotateCertificateResponse{
+		RotateResponse: &pbc.RotateCertificateResponse_LoadCertificate{
+			LoadCertificate: &pbc.LoadCertificateResponse{},
+		},
+	}); err != nil {
+		rerr := fmt.Errorf("failed to send LoadCertificateResponse: %v", err)
+		log.Error(rerr)
+		return rerr
+	}
 
-		if resp, err = stream.Recv(); err != nil {
-			rotateBack()
-			rerr := fmt.Errorf("rolling back - failed to receive RotateCertificateRequest: %v", err)
-			log.Error(rerr)
-			return rerr
-		}
-		finalize := resp.GetFinalizeRotation()
-		if finalize == nil {
-			rotateBack()
-			rerr := fmt.Errorf("expected FinalizeRequest, got something else")
-			log.Error(rerr)
-			return rerr
-		}
-		rotateAccept()
-	*/
+	if req, err = stream.Recv(); err != nil {
+		return fmt.Errorf("response error: %v", err)
+	}
+	finalize := req.GetFinalizeRotation()
+	if finalize == nil {
+		return fmt.Errorf("expected FinalizeRequest, got something else")
+	}
 
 	return nil
 }
@@ -1080,7 +1060,7 @@ func (s *Service) GetCertificates(ctx context.Context, req *pbc.GetCertificatesR
 	log.Infof("allowed a GetCertificates request")
 
 	resp := &pbc.GetCertificatesResponse{
-		CertificateInfo: s.certs.CertInfo,
+		CertificateInfo: s.certManager.GetActivePackage().CertInfo,
 	}
 
 	log.Infof("Send GetCertificates response to client: %v", resp)
@@ -1100,11 +1080,11 @@ func (s *Service) CanGenerateCSR(ctx context.Context, req *pbc.CanGenerateCSRReq
 	return nil, status.Error(codes.Unimplemented, "CanGenerateCSR is not implemented.")
 }
 
-func (s *Service) prepareService(certificates []tls.Certificate, certPool *x509.CertPool) {
+func (s *Service) prepareService() {
 	opts := []grpc.ServerOption{grpc.Creds(credentials.NewTLS(&tls.Config{
 		ClientAuth:   tls.RequireAndVerifyClientCert,
-		Certificates: certificates,
-		ClientCAs:    certPool,
+		Certificates: s.certManager.GetActivePackage().TLSCertKeyPair,
+		ClientCAs:    s.certManager.GetActivePackage().CertPool,
 	}))}
 
 	s.g = grpc.NewServer(opts...)
@@ -1122,7 +1102,7 @@ func (s *Service) registerService() {
 func (s *Service) StartService() {
 	log.Info("Start gNXI Service")
 
-	s.prepareService(s.certs.TLSCertificates, s.certs.CertPool)
+	s.prepareService()
 
 	var err error
 

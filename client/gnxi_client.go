@@ -17,16 +17,18 @@ package main
 
 import (
 	"bytes"
+	"crypto/x509"
+	"encoding/pem"
 	"flag"
 	"github.com/google/gnxi/utils"
 	"github.com/google/gnxi/utils/entity"
 	"github.com/google/go-cmp/cmp"
 	pb "github.com/openconfig/gnmi/proto/gnmi"
+	"io/ioutil"
 	"net"
 	"os"
 	"ovs-gnxi/client/gnmi"
 	"ovs-gnxi/client/gnoi"
-	"ovs-gnxi/shared"
 	"ovs-gnxi/shared/logging"
 	"ovs-gnxi/target/ovs"
 	"strings"
@@ -578,7 +580,17 @@ func RunGNOIGetCertificatesTests(c *gnoi.Client) {
 			log.Fatal(err)
 		}
 
-		certs, err := shared.LoadCertificatesFromFile(td.ExpCertPath)
+		certFile, err := ioutil.ReadFile(td.ExpCertPath)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		certBlock, _ := pem.Decode(certFile)
+		if certBlock == nil {
+			log.Fatal(err)
+		}
+
+		certs, err := x509.ParseCertificates(certBlock.Bytes)
 		if err != nil {
 			log.Fatal(err)
 		}

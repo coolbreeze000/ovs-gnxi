@@ -18,8 +18,8 @@ package ovs
 import (
 	"github.com/openconfig/ygot/ygot"
 	"os"
-	"ovs-gnxi/shared"
 	oc "ovs-gnxi/shared/gnmi/modeldata/generated/ocstruct"
+	"ovs-gnxi/target/cert"
 	gnxi "ovs-gnxi/target/gnxi/service"
 	"strings"
 )
@@ -31,8 +31,8 @@ const (
 )
 
 type SystemBroker struct {
-	certs                *shared.TargetCertificates
 	GNXIService          *gnxi.Service
+	certManager          *cert.Manager
 	OVSClient            *Client
 	startOVSClientChan   chan bool
 	startGNXIServiceChan chan bool
@@ -40,9 +40,9 @@ type SystemBroker struct {
 	stopGNXIServiceChan  chan bool
 }
 
-func NewSystemBroker(gnxiService *gnxi.Service, certs *shared.TargetCertificates) *SystemBroker {
+func NewSystemBroker(gnxiService *gnxi.Service, certManager *cert.Manager) *SystemBroker {
 	var err error
-	s := &SystemBroker{GNXIService: gnxiService, certs: certs}
+	s := &SystemBroker{GNXIService: gnxiService, certManager: certManager}
 
 	log.Info("Initializing OVS Client...")
 
@@ -242,6 +242,6 @@ func (s *SystemBroker) GNOIRebootCallback() error {
 	return nil
 }
 
-func (s *SystemBroker) GNOIRotateCertificatesCallback(certs *shared.TargetCertificates) error {
+func (s *SystemBroker) GNOIRotateCertificatesCallback() error {
 	return nil
 }

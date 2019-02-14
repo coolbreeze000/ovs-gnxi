@@ -21,6 +21,7 @@ import (
 	"ovs-gnxi/shared/gnmi/modeldata"
 	"ovs-gnxi/shared/gnmi/modeldata/generated/ocstruct"
 	"ovs-gnxi/shared/logging"
+	"ovs-gnxi/target/cert"
 	"ovs-gnxi/target/gnxi/service"
 	"ovs-gnxi/target/gnxi/service/gnmi"
 	"ovs-gnxi/target/ovs"
@@ -28,12 +29,9 @@ import (
 )
 
 const (
-	caPATH        = "certs/ca.crt"
-	certPATH      = "certs/target.crt"
-	keyPATH       = "certs/target.key"
-	adminUsername = "admin"
-	adminPassword = "testpassword"
-	defaultCertID = "c5e5a1cb-8e1f-43c1-be4a-ab8e513fc667"
+	certRootSystemPath = "certs"
+	adminUsername      = "admin"
+	adminPassword      = "testpassword"
 )
 
 var log = logging.New("ovs-gnxi")
@@ -41,7 +39,7 @@ var log = logging.New("ovs-gnxi")
 // Server struct maintains the data structure for device config and implements the interface of gnxi server. It supports Capabilities, Get, and Set APIs.
 type Server struct {
 	Auth              *shared.Authenticator
-	Certs             *shared.TargetCertificates
+	CertManager       *cert.Manager
 	SystemBroker      *ovs.SystemBroker
 	Service           *service.Service
 	certificateChange chan struct{}
@@ -53,13 +51,13 @@ func NewServer() (*Server, error) {
 
 	auth := shared.NewAuthenticator(adminUsername, adminPassword)
 
-	certs, err := shared.NewServerCertificates(defaultCertID, caPATH, certPATH, keyPATH)
+	certManager, err := cert.NewCertManager(certRootSystemPath)
 	if err != nil {
 		return nil, err
 	}
 
-	s := &Server{Auth: auth, Certs: certs}
-	s.SystemBroker = ovs.NewSystemBroker(s.Service, s.Certs)
+	s := &Server{Auth: auth, CertManager: certManager}
+	s.SystemBroker = ovs.NewSystemBroker(s.Service, s.CertManager)
 
 	return s, nil
 }
@@ -88,7 +86,7 @@ func (s *Server) createService() *service.Service {
 	log.Debugf("Using following initial config data: %s", config)
 
 	s.SystemBroker.OVSClient.Config.OverwriteCallback(s.SystemBroker.OVSConfigChangeCallback)
-	c, err := service.NewService(s.Auth, model, s.Certs, []byte(config), s.SystemBroker.GNMIConfigSetupCallback, s.SystemBroker.GNMIConfigChangeCallback, s.SystemBroker.GNOIRebootCallback, s.SystemBroker.GNOIRotateCertificatesCallback)
+	c, err := service.NewService(s.Auth, model, s.CertManager, []byte(config), s.SystemBroker.GNMIConfigSetupCallback, s.SystemBroker.GNMIConfigChangeCallback, s.SystemBroker.GNOIRebootCallback, s.SystemBroker.GNOIRotateCertificatesCallback)
 	if err != nil {
 		log.Fatalf("Error on creating gNMI service: %v", err)
 	}
