@@ -1,12 +1,12 @@
 FROM ubuntu:18.04
 ENV HOME=/home/target
 WORKDIR $HOME
-RUN mkdir -p $HOME/certs
+RUN mkdir -p $HOME/certs/active
 RUN mkdir -p /var/log/gnxi_target
 RUN touch /var/log/gnxi_target/gnxi_target.log
-ADD docker/target/certs/ca.crt $HOME/certs/ca.crt
-ADD docker/target/certs/target.crt $HOME/certs/target.crt
-ADD docker/target/certs/target.key $HOME/certs/target.key
+ADD docker/target/certs/ca.crt $HOME/certs/c5e5a1cb-8e1f-43c1-be4a-ab8e513fc667/ca.crt
+ADD docker/target/certs/target.crt $HOME/certs/c5e5a1cb-8e1f-43c1-be4a-ab8e513fc667/target.crt
+ADD docker/target/certs/target.key $HOME/certs/c5e5a1cb-8e1f-43c1-be4a-ab8e513fc667/target.key
 ADD docker/target/ovs_gnxi_topology_network.py /opt/
 ADD docker/target/start_target.sh /home/target/start_target.sh
 ADD docker/target/start_ovs.sh /home/target/start_ovs.sh

@@ -1,4 +1,4 @@
-/* Copyright 2018 Google Inc.
+/* Copyright 2019 Google Inc.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -204,7 +204,7 @@ func main() {
 		RunGNOIRebootTests(gnoiClient)
 		RunGNMIGetTests(gnmiClient)
 		RunGNOIGetCertificatesTests(gnoiClient)
-		RunGNOIRotateCertificatesTests(gnoiClient)
+		//RunGNOIRotateCertificatesTests(gnoiClient)
 		RunGNMIGetTests(gnmiClient)
 		RunGNMISetTests(gnmiClient)
 		RunGNMISubscribeOnceTests(gnmiClient)
