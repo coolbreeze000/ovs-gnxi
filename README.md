@@ -5,6 +5,8 @@ A simple gNXI wrapper prototype for Open vSwitch (OVS).
 Note that this implementation is not meant to be used in production, but instead only acts as a reference implementation 
 to demonstrate the interaction between a gNXI Interface and OVS device.
 
+This prototype does currently not have proper testing, nor descriptive comments.
+
 ## Run
 
 ```bash
@@ -225,4 +227,6 @@ root@target:~# tail -f /var/log/gnxi_target/gnxi_target.log
 ```
 
 ## Generate Go Bindings for Open vSwitch
+```bash
 go run vendor/github.com/openconfig/ygot/generator/generator.go -path=yang -output_file=oc.go -package_name=openvswitch -generate_fakeroot -fakeroot_name=device -compress_paths=true -exclude_modules=ietf-interfaces yang/openconfig-interfaces.yang
+```
