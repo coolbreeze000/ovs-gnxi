@@ -9,6 +9,7 @@ Vagrant.configure("2") do |config|
   # Every Vagrant development environment requires a box. You can search for
   # boxes at https://vagrantcloud.com/search.
   config.vm.box = "ubuntu/bionic64"
+  config.disksize.size = '20GB'
 
   # Network Settings
   config.vm.network "private_network", type: "dhcp"
@@ -20,7 +21,10 @@ Vagrant.configure("2") do |config|
   config.ssh.shell = "bash -c 'BASH_ENV=/etc/profile exec bash'"
 
   # Shared Folders
-  config.vm.synced_folder "./", "/opt/ovs-gnxi/"
+  config.vm.synced_folder "./", "/root/go/src/ovs-gnxi/",
+    type: "rsync",
+    rsync__auto: true,
+    rsync__exclude: [".idea/", ".vagrant/", ".github/", ".git/", ".travis.yml", "Vagrantfile", ".gitignore", "*.log", "*.crt", "*.csr", "*.key", "gnxi_target", "gnxi_client"]
 
   # Enable provisioning with a shell script. Additional provisioners such as
   # Puppet, Chef, Ansible, Salt, and Docker are also available. Please see the
@@ -43,5 +47,16 @@ Vagrant.configure("2") do |config|
     echo "GOBIN=$GOPATH/bin" >> /etc/environment
     echo "PATH=$GOBIN:${PATH}" >> /etc/environment
     mkdir -p "$GOPATH"
+    apt-get install -y autoconf automake libtool curl make g++ unzip protobuf-compiler golang-goprotobuf-dev
+    cd /root
+    wget -q https://github.com/protocolbuffers/protobuf/releases/download/v3.6.1/protobuf-all-3.6.1.tar.gz
+    tar xzf protobuf-all-3.6.1.tar.gz
+    cd /root/go/src/ovs-gnxi/scripts/
+    ./generate_certs.sh > /dev/null 2>&1 &
+    ./build_all.sh > /dev/null 2>&1 &
+    cd ..
+    docker-compose up -d --force-recreate --build
+    docker-compose up -d --force-recreate --build target
+    cd
   SHELL
 end

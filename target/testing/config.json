@@ -1,0 +1,60 @@
+{
+  "openconfig-interfaces:interfaces": {
+    "interface": [
+      {
+        "config": {
+          "mtu": 1500,
+          "name": "sw1"
+        },
+        "name": "sw1",
+        "state": {
+          "admin-status": "UP"
+        }
+      }
+    ]
+  },
+  "openconfig-platform:components": {
+    "component": [
+      {
+        "config": {
+          "name": "os"
+        },
+        "name": "os",
+        "state": {
+          "description": "2.9.0",
+          "type": "openconfig-platform-types:OPERATING_SYSTEM"
+        }
+      }
+    ]
+  },
+  "openconfig-system:system": {
+    "config": {
+      "hostname": "target.gnxi.lan"
+    },
+    "openconfig-openflow:openflow": {
+      "controllers": {
+        "controller": [
+          {
+            "config": {
+              "name": "053f3666-8e20-4efc-a6a6-dd54a86e360b"
+            },
+            "connections": {
+              "connection": [
+                {
+                  "aux-id": 0,
+                  "config": {
+                    "address": "172.18.0.4",
+                    "aux-id": 0,
+                    "port": 6653,
+                    "transport": "TCP"
+                  }
+                }
+              ]
+            },
+            "name": "053f3666-8e20-4efc-a6a6-dd54a86e360b"
+          }
+        ]
+      }
+    }
+  }
+}

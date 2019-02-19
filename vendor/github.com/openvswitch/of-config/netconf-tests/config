@@ -1,0 +1,67 @@
+#!/bin/bash
+#
+# Set 'USER' (username) and 'HOST' (address of OF-CONFIG server).
+# HOST can be set to localhost if OF-CONFIG runs locally.
+#
+
+USER=root
+
+HOST=localhost
+
+# colors
+green=$(tput setaf 2)
+red=$(tput setaf 1)
+reset=$(tput sgr0)
+
+# defined functions
+print_cert()
+{
+echo Certificate info:
+./get-config.sh | awk 'BEGIN {print "-----BEGIN CERTIFICATE-----"}
+/<certificate>/ {
+  if (term) {
+    exit
+  } else {
+    term = 1
+  }
+}
+/<certificate>/,/<\/certificate>/ {
+  gsub("<[^>]*>", ""); gsub(" ", "");
+  print $0;
+}
+END {print "-----END CERTIFICATE-----"}' | openssl x509 -noout -subject
+}
+
+print_rsakeydata()
+{
+echo Key info:
+./get-config.sh | awk 'BEGIN {print "-----BEGIN RSA PRIVATE KEY-----"}
+/<key-data>/,/<\/key-data>/ {
+  gsub("<[^>]*>", ""); print $0;
+}
+END {print "-----END RSA PRIVATE KEY-----"}' | openssl rsa -noout -modulus
+}
+
+# Check that configuration returned to original state.
+# Expects one parameter with name of file with stored configuration.
+check_startup_difference()
+{
+./get-config.sh | diff "$1" -
+if [ $? -eq 0 ]; then
+    echo "${green}Create and remove ended successfully.${reset}"
+else
+    echo "${red}Test failed.${reset}"
+fi
+}
+
+# Check that configuration changed after edit-config
+# Expects one parameter with name of file with stored configuration.
+check_startup_nonchange()
+{
+./get-config.sh | diff -q "$1" -
+if [ $? -ne 0 ]; then
+    echo "${green}Configuration changed as expected.${reset}"
+else
+    echo "${red}Test failed.${reset}"
+fi
+}

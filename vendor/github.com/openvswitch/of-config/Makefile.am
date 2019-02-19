@@ -1,0 +1,7 @@
+ACLOCAL_AMFLAGS=-I m4
+SUBDIRS=server model config
+
+DISTCHECK_CONFIGURE_FLAGS="--with-ovs-srcdir=@OVS_SRCDIR@"
+
+EXTRA_DIST = README.md INSTALL.md AUTHORS CodingStyle.md ChangeLog NEWS COPYING
+
