@@ -153,6 +153,29 @@ var SubscribeOnceTests = []struct {
 	},
 }
 
+var SubscribePollTests = []struct {
+	Desc          string
+	XPaths        []string
+	MaxPollResp   int
+	ExtractorUInt func(n []*gnmi.Notification) uint64
+	MinResp       interface{}
+}{
+	{
+		Desc:          "subscribe to interface state counters in-pkts",
+		XPaths:        []string{"/interfaces/interface[name=sw1-eth1]/state/counters/in-pkts"},
+		MaxPollResp:   3,
+		ExtractorUInt: ExtractSingleUintValueFromResponse,
+		MinResp:       uint64(0),
+	},
+	{
+		Desc:          "subscribe to interface state counters out-pkts",
+		XPaths:        []string{"/interfaces/interface[name=sw1-eth1]/state/counters/out-pkts"},
+		MaxPollResp:   3,
+		ExtractorUInt: ExtractSingleUintValueFromResponse,
+		MinResp:       uint64(0),
+	},
+}
+
 var SubscribeStreamTests = []struct {
 	Desc          string
 	XPaths        []string

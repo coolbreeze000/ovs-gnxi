@@ -67,7 +67,7 @@ type ConfigSetupCallback func(ygot.ValidatedGoStruct) error
 type ConfigChangeCallback func(ygot.ValidatedGoStruct) error
 
 type RebootCallback func() error
-type RotateCertificatesCallback func() error
+type RotateCertificatesCallback func(certID string) error
 
 type CallbackHandler struct {
 	CallbackSetup       ConfigSetupCallback
@@ -128,6 +128,18 @@ func (s *Service) LockService() {
 
 func (s *Service) UnlockService() {
 	s.mu.Unlock()
+}
+
+func (s *Service) GetTLSConfigForClientCallback(*tls.ClientHelloInfo) (*tls.Config, error) {
+	active := s.certManager.GetActivePackage()
+
+	log.Debugf("gRPC server is serving TLS config for cert package %v to gRPC client", active.CertificateID)
+
+	return &tls.Config{
+		ClientAuth:   tls.RequireAndVerifyClientCert,
+		Certificates: active.TLSCertKeyPair,
+		ClientCAs:    active.CertPool,
+	}, nil
 }
 
 // checkEncodingAndModel checks whether encoding and models are supported by the server. Return error if anything is unsupported.
@@ -727,8 +739,7 @@ func (s *Service) Subscribe(stream pbg.GNMI_SubscribeServer) error {
 	case pbg.SubscriptionList_STREAM:
 		go s.subscribeStream(stream, req, errChan)
 	case pbg.SubscriptionList_POLL:
-		// TODO(dherkel@google.com): Subscribe POLL currently not implemented.
-		return status.Errorf(codes.Unimplemented, "unsupported subscribe mode: %s", req.GetSubscribe().Mode)
+		go s.subscribePoll(stream, req, errChan)
 	case pbg.SubscriptionList_ONCE:
 		s.subscribeOnce(stream, req, errChan)
 	default:
@@ -881,6 +892,49 @@ func (s *Service) subscribeOnce(stream pbg.GNMI_SubscribeServer, req *pbg.Subscr
 		}
 	}
 }
+func (s *Service) subscribePoll(stream pbg.GNMI_SubscribeServer, req *pbg.SubscribeRequest, errChan chan<- error) {
+	log.Infof("serving subscribe POLL")
+
+	respChan := make(chan *pbg.SubscribeResponse)
+	go s.processSubscribe(req, respChan, errChan)
+
+	for {
+		select {
+		default:
+			req, err := stream.Recv()
+
+			switch {
+			case err == io.EOF:
+				errChan <- status.Error(codes.Unimplemented, err.Error())
+				return
+			case err != nil:
+				errChan <- err
+				return
+			case req.GetSubscribe() == nil:
+				errChan <- status.Errorf(codes.InvalidArgument, "request must contain a subscription %#v", req)
+				return
+			}
+
+			if err := s.checkEncodingAndModel(req.GetSubscribe().GetEncoding(), req.GetSubscribe().UseModels); err != nil {
+				errChan <- status.Error(codes.Unimplemented, err.Error())
+				return
+			}
+
+			go s.processSubscribe(req, respChan, errChan)
+
+			log.Error("TEEEST")
+
+			resp := <-respChan
+			log.Infof("Send Subscribe POLL response to client: %v", resp)
+
+			err = stream.Send(resp)
+			if err != nil {
+				errChan <- status.Error(codes.Unimplemented, err.Error())
+				return
+			}
+		}
+	}
+}
 
 func (s *Service) subscribeStream(stream pbg.GNMI_SubscribeServer, req *pbg.SubscribeRequest, errChan chan<- error) {
 	log.Infof("serving subscribe STREAM")
@@ -1016,27 +1070,42 @@ func (s *Service) Rotate(stream pbc.CertificateManagement_RotateServer) error {
 		return fmt.Errorf("unexpected Certificate type: %d", loadCertificateRequest.Certificate.Type)
 	}
 
-	//certID := loadCertificateRequest.CertificateId
-	//pemCert := loadCertificateRequest.Certificate.Certificate
-	var pemCACerts [][]byte
+	certID := loadCertificateRequest.CertificateId
 
-	for _, cert := range loadCertificateRequest.CaCertificates {
-		if cert.Type != pbc.CertificateType_CT_X509 {
-			return fmt.Errorf("unexpected Certificate type: %d", cert.Type)
-		}
-		pemCACerts = append(pemCACerts, cert.Certificate)
+	tempPackage.CertificateID = certID
+
+	err = tempPackage.ReadPEMToX509Cert(loadCertificateRequest.Certificate.Certificate)
+	if err != nil {
+		return err
 	}
 
-	// Read/Write Certs
+	err = tempPackage.ReadPEMToX509CACerts(loadCertificateRequest.CaCertificates)
+	if err != nil {
+		return err
+	}
+
+	err = s.certManager.FinalizePackage(tempPackage)
+	if err != nil {
+		return err
+	}
+
+	err = s.ch.CallbackRotateCerts(certID)
+	if err != nil {
+		return err
+	}
+
+	activeCertID := s.certManager.GetActivePackage().CertificateID
+
+	if activeCertID != certID {
+		return fmt.Errorf("unable to rotate cert package from %v to %v", activeCertID, certID)
+	}
 
 	if err = stream.Send(&pbc.RotateCertificateResponse{
 		RotateResponse: &pbc.RotateCertificateResponse_LoadCertificate{
 			LoadCertificate: &pbc.LoadCertificateResponse{},
 		},
 	}); err != nil {
-		rerr := fmt.Errorf("failed to send LoadCertificateResponse: %v", err)
-		log.Error(rerr)
-		return rerr
+		return fmt.Errorf("failed to send LoadCertificateResponse: %v", err)
 	}
 
 	if req, err = stream.Recv(); err != nil {
@@ -1080,11 +1149,10 @@ func (s *Service) CanGenerateCSR(ctx context.Context, req *pbc.CanGenerateCSRReq
 }
 
 func (s *Service) prepareService() {
-	opts := []grpc.ServerOption{grpc.Creds(credentials.NewTLS(&tls.Config{
-		ClientAuth:   tls.RequireAndVerifyClientCert,
-		Certificates: s.certManager.GetActivePackage().TLSCertKeyPair,
-		ClientCAs:    s.certManager.GetActivePackage().CertPool,
-	}))}
+	tlsConfig := &tls.Config{}
+	tlsConfig.GetConfigForClient = s.GetTLSConfigForClientCallback
+
+	opts := []grpc.ServerOption{grpc.Creds(credentials.NewTLS(tlsConfig))}
 
 	s.g = grpc.NewServer(opts...)
 

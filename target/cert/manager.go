@@ -83,6 +83,67 @@ func (p *Package) CreateCSR(country, organization, organizationalUnit, commonNam
 	}), nil
 }
 
+func (p *Package) ReadPEMToX509Cert(data []byte) error {
+	certBlock, _ := pem.Decode(data)
+	if certBlock == nil {
+		return fmt.Errorf("failed to parse certificate PEM")
+	}
+
+	certs, err := x509.ParseCertificates(certBlock.Bytes)
+	if err != nil {
+		return fmt.Errorf("failed to parse certificate: %v", err)
+	}
+
+	p.Certificate = certs[0]
+	p.PublicKey = p.Certificate.PublicKey.(*rsa.PublicKey)
+	p.CertInfo = []*pbc.CertificateInfo{
+		{
+			CertificateId: p.CertificateID,
+			Certificate: &pbc.Certificate{
+				Type:        pbc.CertificateType_CT_X509,
+				Certificate: x509toPEM(p.Certificate),
+			},
+			ModificationTime: time.Now().UnixNano(),
+		},
+	}
+
+	return nil
+}
+
+func (p *Package) ReadPEMToX509CACerts(rawCerts []*pbc.Certificate) error {
+	var pemCACerts [][]byte
+
+	for _, cert := range rawCerts {
+		if cert.Type != pbc.CertificateType_CT_X509 {
+			return fmt.Errorf("unexpected Certificate type: %d", cert.Type)
+		}
+		pemCACerts = append(pemCACerts, cert.Certificate)
+	}
+
+	rawCert := concatAppend(pemCACerts)
+
+	caCertsBlock, _ := pem.Decode(rawCert)
+	if caCertsBlock == nil {
+		return fmt.Errorf("failed to parse certificate PEM")
+	}
+
+	caCerts, err := x509.ParseCertificates(caCertsBlock.Bytes)
+	if err != nil {
+		return fmt.Errorf("failed to parse certificate: %v", err)
+	}
+
+	certPool := x509.NewCertPool()
+
+	if ok := certPool.AppendCertsFromPEM(rawCert); !ok {
+		return fmt.Errorf("failed to append CA certificate")
+	}
+
+	p.CACertificates = caCerts
+	p.CertPool = certPool
+
+	return nil
+}
+
 type Manager struct {
 	active         *Package
 	collection     map[string]*Package
@@ -390,6 +451,14 @@ func x509toPEM(cert *x509.Certificate) []byte {
 	})
 }
 
+func concatAppend(data [][]byte) []byte {
+	var r []byte
+	for _, s := range data {
+		r = append(r, s...)
+	}
+	return r
+}
+
 func (m *Manager) InitializePackage() (*Package, error) {
 	key, err := m.generatePrivateKey(defaultKeysSize)
 	if err != nil {
@@ -403,14 +472,24 @@ func (m *Manager) InitializePackage() (*Package, error) {
 }
 
 func (m *Manager) FinalizePackage(p *Package) error {
-	p.Finalized = true
+	basePath := path.Join(m.rootSystemPath, p.CertificateID)
+	p.certificateSystemPath = path.Join(basePath, filepath.Base(m.active.certificateSystemPath))
+	p.keySystemPath = path.Join(basePath, filepath.Base(m.active.keySystemPath))
+	p.caSystemPath = path.Join(basePath, filepath.Base(m.active.caSystemPath))
 
-	err := m.ExportCertPackageToPath(p.CertificateID)
+	m.collection[p.CertificateID] = p
+
+	err := m.ExportCertPackageToPath(m.collection[p.CertificateID].CertificateID)
 	if err != nil {
 		return err
 	}
 
-	m.collection[p.CertificateID] = p
+	p.TLSCertKeyPair, err = m.loadTLSKeyPairFromPath(m.collection[p.CertificateID].CertificateID)
+	if err != nil {
+		return err
+	}
+
+	m.collection[p.CertificateID].Finalized = true
 
 	return nil
 }

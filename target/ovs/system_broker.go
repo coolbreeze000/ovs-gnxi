@@ -242,6 +242,28 @@ func (s *SystemBroker) GNOIRebootCallback() error {
 	return nil
 }
 
-func (s *SystemBroker) GNOIRotateCertificatesCallback() error {
+func (s *SystemBroker) GNOIRotateCertificatesCallback(certID string) error {
+	s.GNXIService.LockService()
+
+	err := s.certManager.ActivatePackage(certID)
+	if err != nil {
+		return err
+	}
+
+	log.Debug("Received OVS reboot request by GNOI target")
+	s.OVSClient.StopMonitoring()
+	err = s.OVSClient.RestartSystem()
+	if err != nil {
+		log.Errorf("unable to reboot OVS system: %v", err)
+		return err
+	}
+
+	s.stopOVSClientChan <- true
+	s.startOVSClientChan <- true
+
+	s.OVSClient.Config.OverwriteCallback(s.OVSConfigChangeCallback)
+
+	defer s.GNXIService.UnlockService()
+
 	return nil
 }

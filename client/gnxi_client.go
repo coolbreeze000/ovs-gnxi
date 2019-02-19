@@ -185,7 +185,23 @@ func main() {
 				}
 			}
 		case "POLL":
-			// TODO(dherkel@google.com): pb.SubscriptionList_POLL
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+
+			respChan := make(chan *pb.SubscribeResponse)
+			errChan := make(chan error)
+
+			go gnmiClient.SubscribePoll(ctx, subscribeXPaths, respChan, errChan)
+
+			for {
+				select {
+				case resp := <-respChan:
+					log.Debug("== Response:")
+					utils.PrintProto(resp)
+				case err := <-errChan:
+					log.Fatal(err)
+				}
+			}
 		default:
 			ctx, cancel := context.WithTimeout(context.Background(), *timeOut)
 			defer cancel()
@@ -200,15 +216,16 @@ func main() {
 		}
 	default:
 		RunGNMICapabilitiesTests(gnmiClient)
-		RunGNMIGetTests(gnmiClient)
-		RunGNOIRebootTests(gnoiClient)
-		RunGNMIGetTests(gnmiClient)
+		//RunGNMIGetTests(gnmiClient)
+		//RunGNOIRebootTests(gnoiClient)
+		//RunGNMIGetTests(gnmiClient)
 		RunGNOIGetCertificatesTests(gnoiClient)
 		//RunGNOIRotateCertificatesTests(gnoiClient)
-		RunGNMIGetTests(gnmiClient)
-		RunGNMISetTests(gnmiClient)
-		RunGNMISubscribeOnceTests(gnmiClient)
-		RunGNMISubscribeStreamTests(gnmiClient)
+		//RunGNMIGetTests(gnmiClient)
+		//RunGNMISetTests(gnmiClient)
+		//RunGNMISubscribeOnceTests(gnmiClient)
+		RunGNMISubscribePollTests(gnmiClient)
+		//RunGNMISubscribeStreamTests(gnmiClient)
 	}
 
 	log.Info("Finished Open vSwitch gNXI client tester\n")
@@ -489,6 +506,51 @@ func RunGNMISubscribeOnceTests(c *gnmi.Client) {
 			log.Errorf("Subscribe ONCE(%v): expected higher than %v, actual %v", td.XPaths, td.MinResp, td.ExtractorUInt([]*pb.Notification{update.Update}))
 		} else {
 			log.Infof("Successfully verified GNMI Subscribe ONCE(%v) with response value %v", td.XPaths, actResp)
+		}
+	}
+}
+
+func RunGNMISubscribePollTests(c *gnmi.Client) {
+	for _, td := range gnmi.SubscribePollTests {
+		ctx, cancel := context.WithCancel(context.Background())
+
+		log.Infof("Testing GNMI Subscribe POLL(%v)...", td.XPaths)
+
+		respChan := make(chan *pb.SubscribeResponse)
+		errChan := make(chan error)
+
+		go c.SubscribePoll(ctx, td.XPaths, respChan, errChan)
+
+		currentPoll := 1
+
+	l:
+		for {
+			select {
+			case resp := <-respChan:
+				update, ok := resp.GetResponse().(*pb.SubscribeResponse_Update)
+				if !ok {
+					log.Errorf("Invalid subscribe POLL(%v) %v/%v response update: %v", td.XPaths, currentPoll, td.MaxPollResp, update)
+					continue
+				}
+
+				actResp := td.ExtractorUInt([]*pb.Notification{update.Update})
+
+				if actResp <= td.MinResp.(uint64) {
+					log.Errorf("Subscribe POLL(%v) %v/%v: expected higher than %v, actual %v", td.XPaths, currentPoll, td.MaxPollResp, td.MinResp, td.ExtractorUInt([]*pb.Notification{update.Update}))
+				} else {
+					log.Infof("Successfully verified GNMI Subscribe POLL(%v) %v/%v with response value %v", td.XPaths, currentPoll, td.MaxPollResp, actResp)
+				}
+
+				if currentPoll >= td.MaxPollResp {
+					cancel()
+					break l
+				}
+
+				currentPoll++
+			case err := <-errChan:
+				log.Fatal(err)
+				continue
+			}
 		}
 	}
 }

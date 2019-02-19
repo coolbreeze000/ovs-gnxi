@@ -21,19 +21,23 @@ import (
 	"github.com/golang/protobuf/proto"
 	"github.com/google/gnxi/utils/credentials"
 	"github.com/google/gnxi/utils/xpath"
+	pb "github.com/openconfig/gnmi/proto/gnmi"
+	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 	"io"
 	"io/ioutil"
 	"ovs-gnxi/shared/logging"
 	"strconv"
 	"strings"
-
-	pb "github.com/openconfig/gnmi/proto/gnmi"
-	"golang.org/x/net/context"
+	"time"
 )
 
 var (
 	log = logging.New("ovs-gnxi-client")
+)
+
+const (
+	pollInterval = 3
 )
 
 type Client struct {
@@ -230,6 +234,152 @@ func (c *Client) Set(ctx context.Context, deleteXPaths, replaceXPaths, updateXPa
 	return response, nil
 }
 
+func (c *Client) SubscribeOnce(ctx context.Context, subscribeXPaths []string) (*pb.SubscribeResponse, error) {
+	opts := credentials.ClientCredentials(c.targetName)
+	conn, err := grpc.Dial(c.targetAddress, opts...)
+	if err != nil {
+		return nil, err
+	}
+	defer conn.Close()
+
+	cli := pb.NewGNMIClient(conn)
+
+	encoding, ok := pb.Encoding_value[c.encodingName]
+	if !ok {
+		var gnmiEncodingList []string
+		for _, name := range pb.Encoding_name {
+			gnmiEncodingList = append(gnmiEncodingList, name)
+		}
+		return nil, fmt.Errorf("supported encodings: %s", strings.Join(gnmiEncodingList, ", "))
+	}
+
+	var pbModelDataList []*pb.ModelData
+	var subscriptions []*pb.Subscription
+
+	for _, xPath := range subscribeXPaths {
+		pbPath, err := xpath.ToGNMIPath(xPath)
+		if err != nil {
+			return nil, fmt.Errorf("error in parsing xpath %q to gnxi path", xPath)
+		}
+		subscriptions = append(subscriptions, &pb.Subscription{Path: pbPath})
+	}
+
+	request := &pb.SubscribeRequest{
+		Request: &pb.SubscribeRequest_Subscribe{
+			Subscribe: &pb.SubscriptionList{
+				Prefix:       &pb.Path{Target: c.targetName},
+				Mode:         pb.SubscriptionList_ONCE,
+				UseModels:    pbModelDataList,
+				Subscription: subscriptions,
+				Encoding:     pb.Encoding(encoding),
+			},
+		},
+	}
+
+	log.Debug("== Request:")
+	log.Debug(proto.MarshalTextString(request))
+
+	subClient, err := cli.Subscribe(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("subscribe failed: %v", err)
+	}
+
+	err = subClient.Send(request)
+	if err != nil {
+		return nil, fmt.Errorf("subscribe send failed: %v", err)
+	}
+	response, err := subClient.Recv()
+	if err != nil {
+		return nil, fmt.Errorf("subscribe recv failed: %v", err)
+	}
+
+	return response, nil
+}
+
+func (c *Client) SubscribePoll(ctx context.Context, subscribeXPaths []string, respChan chan<- *pb.SubscribeResponse, errChan chan<- error) {
+	opts := credentials.ClientCredentials(c.targetName)
+	conn, err := grpc.Dial(c.targetAddress, opts...)
+	if err != nil {
+		errChan <- err
+		return
+	}
+	defer conn.Close()
+
+	cli := pb.NewGNMIClient(conn)
+
+	defer close(respChan)
+
+	encoding, ok := pb.Encoding_value[c.encodingName]
+	if !ok {
+		var gnmiEncodingList []string
+		for _, name := range pb.Encoding_name {
+			gnmiEncodingList = append(gnmiEncodingList, name)
+		}
+		errChan <- fmt.Errorf("supported encodings: %s", strings.Join(gnmiEncodingList, ", "))
+		return
+	}
+
+	var pbModelDataList []*pb.ModelData
+	var subscriptions []*pb.Subscription
+
+	for _, xPath := range subscribeXPaths {
+		pbPath, err := xpath.ToGNMIPath(xPath)
+		if err != nil {
+			errChan <- err
+			return
+		}
+		subscriptions = append(subscriptions, &pb.Subscription{Path: pbPath})
+	}
+
+	subClient, err := cli.Subscribe(ctx)
+	if err != nil {
+		errChan <- err
+		return
+	}
+
+	for {
+		request := &pb.SubscribeRequest{
+			Request: &pb.SubscribeRequest_Subscribe{
+				Subscribe: &pb.SubscriptionList{
+					Prefix:       &pb.Path{Target: c.targetName},
+					Mode:         pb.SubscriptionList_POLL,
+					UseModels:    pbModelDataList,
+					Subscription: subscriptions,
+					Encoding:     pb.Encoding(encoding),
+				},
+			},
+		}
+
+		log.Debug("== Request:")
+		log.Debug(proto.MarshalTextString(request))
+
+		err = subClient.Send(request)
+		if err != nil {
+			errChan <- err
+			return
+		}
+
+		resp, err := subClient.Recv()
+		if err != nil {
+			if err == io.EOF {
+				return
+			}
+			errChan <- err
+			return
+		}
+
+		select {
+		case <-ctx.Done():
+			log.Info("Stopped gNMI Subscribe Poll Client")
+			return
+		case respChan <- resp:
+		}
+
+		log.Infof("Poll target again in %v seconds", pollInterval)
+		time.Sleep(3 * time.Second)
+	}
+}
+
 func (c *Client) SubscribeStream(ctx context.Context, subscribeXPaths []string, respChan chan<- *pb.SubscribeResponse, errChan chan<- error) {
 	opts := credentials.ClientCredentials(c.targetName)
 	conn, err := grpc.Dial(c.targetAddress, opts...)
@@ -309,66 +459,4 @@ func (c *Client) SubscribeStream(ctx context.Context, subscribeXPaths []string, 
 		case respChan <- resp:
 		}
 	}
-}
-
-func (c *Client) SubscribeOnce(ctx context.Context, subscribeXPaths []string) (*pb.SubscribeResponse, error) {
-	opts := credentials.ClientCredentials(c.targetName)
-	conn, err := grpc.Dial(c.targetAddress, opts...)
-	if err != nil {
-		return nil, err
-	}
-	defer conn.Close()
-
-	cli := pb.NewGNMIClient(conn)
-
-	encoding, ok := pb.Encoding_value[c.encodingName]
-	if !ok {
-		var gnmiEncodingList []string
-		for _, name := range pb.Encoding_name {
-			gnmiEncodingList = append(gnmiEncodingList, name)
-		}
-		return nil, fmt.Errorf("supported encodings: %s", strings.Join(gnmiEncodingList, ", "))
-	}
-
-	var pbModelDataList []*pb.ModelData
-	var subscriptions []*pb.Subscription
-
-	for _, xPath := range subscribeXPaths {
-		pbPath, err := xpath.ToGNMIPath(xPath)
-		if err != nil {
-			return nil, fmt.Errorf("error in parsing xpath %q to gnxi path", xPath)
-		}
-		subscriptions = append(subscriptions, &pb.Subscription{Path: pbPath})
-	}
-
-	request := &pb.SubscribeRequest{
-		Request: &pb.SubscribeRequest_Subscribe{
-			Subscribe: &pb.SubscriptionList{
-				Prefix:       &pb.Path{Target: c.targetName},
-				Mode:         pb.SubscriptionList_ONCE,
-				UseModels:    pbModelDataList,
-				Subscription: subscriptions,
-				Encoding:     pb.Encoding(encoding),
-			},
-		},
-	}
-
-	log.Debug("== Request:")
-	log.Debug(proto.MarshalTextString(request))
-
-	subClient, err := cli.Subscribe(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("subscribe failed: %v", err)
-	}
-
-	err = subClient.Send(request)
-	if err != nil {
-		return nil, fmt.Errorf("subscribe send failed: %v", err)
-	}
-	response, err := subClient.Recv()
-	if err != nil {
-		return nil, fmt.Errorf("subscribe recv failed: %v", err)
-	}
-
-	return response, nil
 }

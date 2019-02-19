@@ -166,7 +166,7 @@ func (c *Client) RotateCertificates(ctx context.Context, certID string) error {
 	}
 
 	log.Debug("== Request:")
-	log.Debug(proto.MarshalTextString(requestGen))
+	log.Debug(proto.MarshalTextString(requestLoad))
 
 	if err = certClient.Send(requestLoad); err != nil {
 		return fmt.Errorf("failed to send LoadCertificateRequest: %v", err)
