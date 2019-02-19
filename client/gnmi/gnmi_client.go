@@ -37,7 +37,7 @@ var (
 )
 
 const (
-	pollInterval = 3
+	pollInterval = 5
 )
 
 type Client struct {
@@ -376,7 +376,7 @@ func (c *Client) SubscribePoll(ctx context.Context, subscribeXPaths []string, re
 		}
 
 		log.Infof("Poll target again in %v seconds", pollInterval)
-		time.Sleep(3 * time.Second)
+		time.Sleep(pollInterval * time.Second)
 	}
 }
 

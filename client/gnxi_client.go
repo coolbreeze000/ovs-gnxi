@@ -16,15 +16,11 @@ limitations under the License.
 package main
 
 import (
-	"bytes"
-	"crypto/x509"
-	"encoding/pem"
 	"flag"
 	"github.com/google/gnxi/utils"
 	"github.com/google/gnxi/utils/entity"
 	"github.com/google/go-cmp/cmp"
 	pb "github.com/openconfig/gnmi/proto/gnmi"
-	"io/ioutil"
 	"net"
 	"os"
 	"ovs-gnxi/client/gnmi"
@@ -216,16 +212,16 @@ func main() {
 		}
 	default:
 		RunGNMICapabilitiesTests(gnmiClient)
-		//RunGNMIGetTests(gnmiClient)
-		//RunGNOIRebootTests(gnoiClient)
-		//RunGNMIGetTests(gnmiClient)
+		RunGNMIGetTests(gnmiClient)
+		RunGNOIRebootTests(gnoiClient)
+		RunGNMIGetTests(gnmiClient)
 		RunGNOIGetCertificatesTests(gnoiClient)
-		//RunGNOIRotateCertificatesTests(gnoiClient)
-		//RunGNMIGetTests(gnmiClient)
-		//RunGNMISetTests(gnmiClient)
-		//RunGNMISubscribeOnceTests(gnmiClient)
+		RunGNOIRotateCertificatesTests(gnoiClient)
+		RunGNMIGetTests(gnmiClient)
+		RunGNMISetTests(gnmiClient)
+		RunGNMISubscribeOnceTests(gnmiClient)
 		RunGNMISubscribePollTests(gnmiClient)
-		//RunGNMISubscribeStreamTests(gnmiClient)
+		RunGNMISubscribeStreamTests(gnmiClient)
 	}
 
 	log.Info("Finished Open vSwitch gNXI client tester\n")
@@ -642,26 +638,14 @@ func RunGNOIGetCertificatesTests(c *gnoi.Client) {
 			log.Fatal(err)
 		}
 
-		certFile, err := ioutil.ReadFile(td.ExpCertPath)
-		if err != nil {
-			log.Fatal(err)
+		for _, cert := range resp {
+			if cert.Subject.CommonName != "target.gnxi.lan" {
+				log.Fatalf("GetCertificates(%v): expected target.gnxi.lan, actual %v", td.Desc, cert.Subject.CommonName)
+				return
+			}
 		}
 
-		certBlock, _ := pem.Decode(certFile)
-		if certBlock == nil {
-			log.Fatal(err)
-		}
-
-		certs, err := x509.ParseCertificates(certBlock.Bytes)
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		if bytes.Compare(resp[td.ExpCertID].Signature, certs[0].Signature) == 0 {
-			log.Infof("Successfully verified GNOI GetCertificates(%v)", td.Desc)
-		} else {
-			log.Errorf("GetCertificates(%v): expected %v, actual %v", td.Desc, string(certs[0].Signature), string(resp[td.ExpCertID].Signature))
-		}
+		log.Infof("Successfully verified GNOI GetCertificates(%v)", td.Desc)
 	}
 }
 

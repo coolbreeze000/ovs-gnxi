@@ -870,6 +870,7 @@ func (s *Service) processSubscribe(req *pbg.SubscribeRequest, respChan chan<- *p
 	log.Debugf("prepared subscribe response: %v", resp)
 
 	respChan <- resp
+	return
 }
 
 func (s *Service) subscribeOnce(stream pbg.GNMI_SubscribeServer, req *pbg.SubscribeRequest, errChan chan<- error) {
@@ -898,10 +899,23 @@ func (s *Service) subscribePoll(stream pbg.GNMI_SubscribeServer, req *pbg.Subscr
 	respChan := make(chan *pbg.SubscribeResponse)
 	go s.processSubscribe(req, respChan, errChan)
 
+	resp := <-respChan
+	log.Infof("Send Subscribe POLL response to client: %v", resp)
+
+	err := stream.Send(resp)
+	if err != nil {
+		errChan <- status.Error(codes.Unimplemented, err.Error())
+		return
+	}
+
 	for {
 		select {
 		default:
 			req, err := stream.Recv()
+			if err != nil {
+				errChan <- status.Error(codes.Unimplemented, err.Error())
+				return
+			}
 
 			switch {
 			case err == io.EOF:
@@ -921,8 +935,6 @@ func (s *Service) subscribePoll(stream pbg.GNMI_SubscribeServer, req *pbg.Subscr
 			}
 
 			go s.processSubscribe(req, respChan, errChan)
-
-			log.Error("TEEEST")
 
 			resp := <-respChan
 			log.Infof("Send Subscribe POLL response to client: %v", resp)
