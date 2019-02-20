@@ -654,13 +654,13 @@ func RunGNOIRotateCertificatesTests(c *gnoi.Client) {
 	defer cancel()
 
 	for _, td := range gnoi.RotateCertificatesTests {
-		log.Infof("Testing GNOI Reboot(%v)...", td.Desc)
+		log.Infof("Testing GNOI RotateCertificates(%v)...", td.Desc)
 
 		err := c.RotateCertificates(ctx, td.CertID)
 		if err != nil {
 			log.Fatal(err)
 		} else {
-			log.Infof("Successfully verified GNOI Rotate Certificates(%v)", td.Desc)
+			log.Infof("Successfully verified GNOI RotateCertificates(%v)", td.Desc)
 		}
 	}
 }
