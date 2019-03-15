@@ -75,6 +75,9 @@ func (c *Client) Capabilities(ctx context.Context) (*pb.CapabilityResponse, erro
 		return nil, fmt.Errorf("error in getting capabilities: %v", err)
 	}
 
+	log.Debug("== Response:")
+	log.Debug(proto.MarshalTextString(response))
+
 	return response, nil
 }
 
@@ -120,6 +123,9 @@ func (c *Client) Get(ctx context.Context, getXPaths []string) (*pb.GetResponse, 
 	if err != nil {
 		return nil, fmt.Errorf("Get failed: %v", err)
 	}
+
+	log.Debug("== Response:")
+	log.Debug(proto.MarshalTextString(response))
 
 	return response, nil
 }
@@ -231,6 +237,9 @@ func (c *Client) Set(ctx context.Context, deleteXPaths, replaceXPaths, updateXPa
 		return nil, fmt.Errorf("set failed: %v", err)
 	}
 
+	log.Debug("== Response:")
+	log.Debug(proto.MarshalTextString(response))
+
 	return response, nil
 }
 
@@ -292,6 +301,9 @@ func (c *Client) SubscribeOnce(ctx context.Context, subscribeXPaths []string) (*
 	if err != nil {
 		return nil, fmt.Errorf("subscribe recv failed: %v", err)
 	}
+
+	log.Debug("== Response:")
+	log.Debug(proto.MarshalTextString(response))
 
 	return response, nil
 }
@@ -367,6 +379,9 @@ func (c *Client) SubscribePoll(ctx context.Context, subscribeXPaths []string, re
 			errChan <- err
 			return
 		}
+
+		log.Debug("== Response:")
+		log.Debug(proto.MarshalTextString(resp))
 
 		select {
 		case <-ctx.Done():
@@ -451,6 +466,9 @@ func (c *Client) SubscribeStream(ctx context.Context, subscribeXPaths []string, 
 			errChan <- err
 			return
 		}
+
+		log.Debug("== Response:")
+		log.Debug(proto.MarshalTextString(resp))
 
 		select {
 		case <-ctx.Done():

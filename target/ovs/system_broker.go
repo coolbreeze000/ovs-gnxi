@@ -134,7 +134,7 @@ func (s *SystemBroker) GenerateConfig(config *Config) ([]byte, error) {
 		switch protocol := strings.ToLower(i.Target.Protocol); protocol {
 		case "tcp":
 			n.Transport = oc.OpenconfigOpenflow_Transport_TCP
-		case "tls":
+		case "ssl":
 			n.Transport = oc.OpenconfigOpenflow_Transport_TLS
 		default:
 			n.Transport = oc.OpenconfigOpenflow_Transport_UNSET

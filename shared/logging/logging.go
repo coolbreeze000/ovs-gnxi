@@ -51,7 +51,7 @@ func New(tag string) *Logger {
 		writer := logging.NewLogBackend(os.Stdout, "", 0)
 		writerFormatter := logging.NewBackendFormatter(writer, logFormatConsole)
 		writerLeveled := logging.AddModuleLevel(writerFormatter)
-		writerLeveled.SetLevel(logging.DEBUG, tag)
+		writerLeveled.SetLevel(logging.INFO, tag)
 		logging.SetBackend(writerLeveled)
 		instance[tag].consoleWriter = logging.MustGetLogger(tag)
 		instance[tag].consoleWriter.ExtraCalldepth = 1

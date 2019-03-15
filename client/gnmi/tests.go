@@ -116,8 +116,8 @@ var SetTests = []struct {
 		RollbackExpResp:      "172.18.0.2",
 		Type:                 ovs.ControllerTable,
 		OVSResultKey:         "target",
-		OVSDataBefore:        "tcp:172.18.0.2:6653",
-		OVSDataAfter:         "tcp:172.18.0.3:6653",
+		OVSDataBefore:        "ssl:172.18.0.2:6653",
+		OVSDataAfter:         "ssl:172.18.0.3:6653",
 	},
 	{
 		Desc:                 "set system openflow controller connection config port",
@@ -128,8 +128,8 @@ var SetTests = []struct {
 		RollbackExpResp:      uint64(6653),
 		Type:                 ovs.ControllerTable,
 		OVSResultKey:         "target",
-		OVSDataBefore:        "tcp:172.18.0.2:6653",
-		OVSDataAfter:         "tcp:172.18.0.2:6654",
+		OVSDataBefore:        "ssl:172.18.0.2:6653",
+		OVSDataAfter:         "ssl:172.18.0.2:6654",
 	},
 }
 

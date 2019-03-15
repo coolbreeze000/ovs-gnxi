@@ -4,7 +4,6 @@ import socket
 import argparse
 import ipaddress
 
-from mininet.topo import Topo
 from mininet.net import Mininet
 from mininet.cli import CLI
 from mininet.log import setLogLevel
@@ -16,24 +15,6 @@ parser.add_argument("--controller", type=str, help="The hostname or IP address o
 ARGS = parser.parse_args()
 
 
-class ToplogyNetwork(Topo):
-
-    def __init__(self):
-        # Initialize topology
-        Topo.__init__(self)
-
-        # Add hosts
-        h1 = self.addHost('h1')
-        h2 = self.addHost('h2')
-
-        # Add switches
-        sw1 = self.addSwitch('sw1', protocols='OpenFlow13', dpid='1')
-
-        # Add links
-        self.addLink(h1, sw1)
-        self.addLink(h2, sw1)
-
-
 def resolve_controller(controller):
     try:
         ipaddress.ip_address(controller)
@@ -43,10 +24,22 @@ def resolve_controller(controller):
 
 
 def run_topology():
-    topology = ToplogyNetwork()
-    net = Mininet(topo=topology, controller=lambda name: RemoteController(
+    # Initialize topology
+    net = Mininet(controller=lambda name: RemoteController(
         name, ip=resolve_controller(ARGS.controller)), switch=OVSSwitch, autoSetMacs=True)
+    # Add Controller
+    net.addController( 'c0' )
+    # Add hosts
+    h1 = net.addHost('h1')
+    h2 = net.addHost('h2')
+    # Add switch
+    sw1 = net.addSwitch('sw1', protocols='OpenFlow13', dpid='1')
+    # Add links
+    net.addLink(h1, sw1)
+    net.addLink(h2, sw1)
+
     net.start()
+    sw1.cmd('ovs-vsctl set-controller sw1 ssl:' + resolve_controller(ARGS.controller) + ':6653')
     CLI(net)
     net.stop()
 
