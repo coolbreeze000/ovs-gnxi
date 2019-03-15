@@ -14,7 +14,5 @@ ENV GOPATH=$HOME/go
 ENV GOBIN=$GOPATH/bin
 ENV PATH=$GOBIN:${PATH}
 RUN mkdir -p $GOPATH
-RUN go get -u github.com/google/gnxi/gnoi_cert
-RUN go install -v github.com/google/gnxi/gnoi_cert
 ENV GNMI_TARGET=target.gnxi.lan
 ENV GNMI_PORT=32123
