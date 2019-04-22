@@ -13,6 +13,8 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+// Contains code from source: https://github.com/socketplane/libovsdb/tree/4de3618546deba09d8875d719752db32bd4652c0
+
 package ovs
 
 import (
@@ -295,35 +297,6 @@ func (o *Client) MonitorAll() {
 
 	go o.receivedMonitorUpdate()
 }
-
-/*
-func (o *Client) StopSystem() error {
-	log.Debug("Stopping OVS system...")
-
-	var sysproc = &syscall.SysProcAttr{Credential: &syscall.Credential{syscall.Getuid(), syscall.Getgid(), []uint32{}}, Noctty: true}
-	var attr = os.ProcAttr{
-		Dir: ".",
-		Env: os.Environ(),
-		Files: []*os.File{
-			os.Stdin,
-			nil,
-			nil,
-		},
-		Sys: sysproc,
-	}
-	process, err := os.StartProcess(StopOVS, []string{StopOVS}, &attr)
-	if err != nil {
-		return err
-	}
-
-	// Detach Process
-	err = process.Release()
-	if err != nil {
-		return err
-	}
-
-	return nil
-}*/
 
 func (o *Client) StartSystem() error {
 	log.Debug("Starting OVS system...")

@@ -13,7 +13,6 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// Package credentials loads certificates and validates user credentials.
 package shared
 
 import (
@@ -45,7 +44,6 @@ func (a *Authenticator) AddUser(username, password string) {
 	}
 }
 
-// AuthorizeUser checks for valid credentials in the context Metadata.
 func (a *Authenticator) AuthorizeUser(ctx context.Context) (bool, error) {
 	headers, ok := metadata.FromIncomingContext(ctx)
 	if !ok {

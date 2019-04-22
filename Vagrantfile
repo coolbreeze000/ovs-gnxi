@@ -54,11 +54,10 @@ Vagrant.configure("2") do |config|
     wget -q https://github.com/protocolbuffers/protobuf/releases/download/v3.6.1/protobuf-all-3.6.1.tar.gz
     tar xzf protobuf-all-3.6.1.tar.gz
     cd /root/go/src/ovs-gnxi/scripts/
-    ./generate_certs.sh > /dev/null 2>&1 &
+    ./generate_certs.sh
     ./build_all.sh > /dev/null 2>&1 &
     cd ..
     docker-compose up -d --force-recreate --build
-    docker-compose up -d --force-recreate --build target
     cd
   SHELL
 end
