@@ -13,6 +13,8 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+// Contains code from source: https://github.com/google/gnxi/tree/8521faedac371b6e13ac76f752eb41079ca79bd7
+
 package gnoi
 
 import (

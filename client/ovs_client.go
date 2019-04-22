@@ -13,6 +13,8 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+// Contains code from source: https://github.com/socketplane/libovsdb/tree/4de3618546deba09d8875d719752db32bd4652c0
+
 package main
 
 import (

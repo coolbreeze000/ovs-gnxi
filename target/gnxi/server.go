@@ -13,7 +13,8 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// Package gnxi implements a gnxi server.
+// Contains code from source: https://github.com/google/gnxi/tree/8521faedac371b6e13ac76f752eb41079ca79bd7
+
 package gnxi
 
 import (
@@ -36,7 +37,6 @@ const (
 
 var log = logging.New("ovs-gnxi")
 
-// Server struct maintains the data structure for device config and implements the interface of gnxi server. It supports Capabilities, Get, and Set APIs.
 type Server struct {
 	Auth              *shared.Authenticator
 	CertManager       *cert.Manager

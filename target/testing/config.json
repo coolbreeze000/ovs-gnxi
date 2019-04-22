@@ -4,11 +4,39 @@
       {
         "config": {
           "mtu": 1500,
-          "name": "sw1"
+          "name": "sw1-eth1"
         },
-        "name": "sw1",
+        "name": "sw1-eth1",
         "state": {
-          "admin-status": "UP"
+          "admin-status": "UP",
+          "counters": {
+            "in-discards": "0",
+            "in-errors": "0",
+            "in-pkts": "68",
+            "out-discards": "0",
+            "out-errors": "0",
+            "out-pkts": "52"
+          },
+          "oper-status": "UP"
+        }
+      },
+      {
+        "config": {
+          "mtu": 1500,
+          "name": "sw1-eth2"
+        },
+        "name": "sw1-eth2",
+        "state": {
+          "admin-status": "UP",
+          "counters": {
+            "in-discards": "0",
+            "in-errors": "0",
+            "in-pkts": "59",
+            "out-discards": "0",
+            "out-errors": "0",
+            "out-pkts": "52"
+          },
+          "oper-status": "UP"
         }
       }
     ]
@@ -21,7 +49,7 @@
         },
         "name": "os",
         "state": {
-          "description": "2.9.0",
+          "description": "2.9.2",
           "type": "openconfig-platform-types:OPERATING_SYSTEM"
         }
       }
@@ -36,22 +64,25 @@
         "controller": [
           {
             "config": {
-              "name": "053f3666-8e20-4efc-a6a6-dd54a86e360b"
+              "name": "main"
             },
             "connections": {
               "connection": [
                 {
                   "aux-id": 0,
                   "config": {
-                    "address": "172.18.0.4",
+                    "address": "172.18.0.2",
                     "aux-id": 0,
                     "port": 6653,
-                    "transport": "TCP"
+                    "transport": "TLS"
+                  },
+                  "state": {
+                    "connected": true
                   }
                 }
               ]
             },
-            "name": "053f3666-8e20-4efc-a6a6-dd54a86e360b"
+            "name": "main"
           }
         ]
       }
